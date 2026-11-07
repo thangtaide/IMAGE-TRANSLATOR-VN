@@ -1,0 +1,61 @@
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local data, test images, evidence and backup copies
+/backup*/
+/Backup*/
+/ImgTest/
+/cache/
+/logs/
+/output/
+/dist/
+/build/
+/wheelhouse/
+
+# AI weights are downloaded/installed separately; models/README.md is source documentation
+/models/ocr/**
+/models/translation/**
+
+# Machine settings and private tool/account configuration
+/config/*
+!/config/settings.example.json
+.env
+.env.*
+!.env.example
+.codex/
+.agents/
+.aws/
+.idea/
+.vscode/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Runtime artifacts and temporary files
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.tmp
+*.part
+*.bak
+*.orig
+*.rej
+*.whl
+*.exe
+*.dll
+*.pyd
