@@ -106,7 +106,7 @@ class RealGUITests(unittest.TestCase):
 
     def test_window_opens_and_resizes(self):
         from ui.main_window import MainWindow
-        window = MainWindow()
+        window = MainWindow(persist_settings=False)
         window.show()
         window.resize(1000, 760)
         self.app.processEvents()
@@ -126,7 +126,7 @@ class RealGUITests(unittest.TestCase):
     def test_real_folder_dialog_integration_mock_selection(self):
         # Qt is real; modal native picker selection is deliberately mocked.
         from ui.main_window import MainWindow
-        window = MainWindow()
+        window = MainWindow(persist_settings=False)
         with patch('ui.main_window.QFileDialog.getExistingDirectory', return_value=str(ROOT / 'output')):
             window.choose_folder(window.source)
         self.assertEqual(Path(window.source.text()), ROOT / 'output')

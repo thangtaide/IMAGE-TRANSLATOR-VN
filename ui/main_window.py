@@ -6,10 +6,10 @@ from pathlib import Path
 from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout,
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+    QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
+    QProgressBar, QPushButton, QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
-from core.paths import ROOT
+from core.paths import CONFIG, ROOT
 from core.storage import TranslationCache, load_options, save_options
 from core.types import Options
 from ui.models_dialog import ModelManagerDialog
@@ -26,9 +26,10 @@ def duration(seconds: float | None) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, cache_path: Path | None = None):
+    def __init__(self, cache_path: Path | None = None, persist_settings: bool = True):
         super().__init__()
         self.cache_path = cache_path
+        self.persist_settings = persist_settings
         from ui.fonts import configure_ui_font
         self.font_report = configure_ui_font()
         self.setWindowTitle('IMAGE TRANSLATOR VN')
@@ -42,25 +43,36 @@ class MainWindow(QMainWindow):
         self.details: dict[str, str] = {}
         self.failed: list[str] = []
         self.unfinished: list[str] = []
+        self.review_pages: list[dict] = []
         self.started = 0.0
         self.paused_at = None
         self.pause_seconds = 0.0
         self.pending_options = None
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
         central = QWidget()
-        self.setCentralWidget(central)
+        central.setMinimumWidth(620)
+        scroll.setWidget(central)
+        self.setCentralWidget(scroll)
         outer = QVBoxLayout(central)
+        outer.setSpacing(12)
         title = QLabel('IMAGE TRANSLATOR VN')
         title.setObjectName('title')
         outer.addWidget(title)
         subtitle = QLabel('OCR • Dịch sang tiếng Việt • Phục hồi nền • Xuất ảnh   |   CPU • Miễn phí')
         subtitle.setObjectName('subtitle')
         outer.addWidget(subtitle)
-        self.config_panel = QGroupBox('Nguồn ảnh và cấu hình')
-        config = QVBoxLayout(self.config_panel)
+        self.source_tabs = QTabWidget()
+        self.folder_page = QWidget()
+        folder_layout = QVBoxLayout(self.folder_page)
+        folder_layout.setSpacing(10)
+        self.folder_inputs = QGroupBox('Thư mục ảnh')
+        config = QVBoxLayout(self.folder_inputs)
         self.source = QLineEdit(self.options.source)
         self.output = QLineEdit(self.options.output)
         for label, widget, title_text in [('THƯ MỤC ẢNH NGUỒN', self.source, 'Chọn thư mục'),
-                                          ('THƯ MỤC XUẤT (trong D:\\TransTool)', self.output, 'Chọn nơi lưu')]:
+                                          ('THƯ MỤC XUẤT', self.output, 'Chọn nơi lưu')]:
             row = QHBoxLayout()
             row.addWidget(QLabel(label))
             row.addWidget(widget, 1)
@@ -75,12 +87,17 @@ class MainWindow(QMainWindow):
         self.keep_original.setChecked(True)
         self.keep_original.setEnabled(False)
         self.skip = QCheckBox('Bỏ qua ảnh đã xử lý thành công')
-        self.skip.setChecked(self.options.skip_success)
+        self.skip.setChecked(True)
+        self.skip.setEnabled(False)
+        self.skip.setToolTip('Ảnh thành công có checkpoint/hash hợp lệ luôn được bảo toàn. Đổi thư mục xuất hoặc recipe để tạo bản mới.')
         self.structure = QCheckBox('Giữ cấu trúc thư mục nguồn')
         self.structure.setChecked(self.options.preserve_structure)
         for widget in [self.recursive, self.keep_original, self.skip, self.structure]:
             choices.addWidget(widget)
         config.addLayout(choices)
+        folder_layout.addWidget(self.folder_inputs)
+        self.config_panel = QGroupBox('OCR và dịch')
+        config = QVBoxLayout(self.config_panel)
         row = QHBoxLayout()
         row.addWidget(QLabel('OCR'))
         self.language = QComboBox()
@@ -88,7 +105,8 @@ class MainWindow(QMainWindow):
             self.language.addItem(label, code)
         self.language.setCurrentIndex(max(0, self.language.findData(self.options.language)))
         row.addWidget(self.language)
-        row.addWidget(QLabel('Dịch'))
+        self.mode_label = QLabel('Dịch')
+        row.addWidget(self.mode_label)
         self.mode = QComboBox()
         self.mode.addItems(['Offline', 'Online', 'Auto Fallback'])
         self.mode.setCurrentText(self.options.mode)
@@ -101,7 +119,8 @@ class MainWindow(QMainWindow):
         self.offline_provider.setItemData(2, 'Dịch trực tiếp; cần cài riêng model M2M100 đã chuyển đổi. '
                                         'Chưa có model sẽ báo lỗi, không tự tải.', Qt.ToolTipRole)
         self.offline_provider.setCurrentText(self.options.offline_provider)
-        row.addWidget(QLabel('Online'))
+        self.online_label = QLabel('Online')
+        row.addWidget(self.online_label)
         row.addWidget(self.online_provider)
         row.addWidget(QLabel('Offline'))
         row.addWidget(self.offline_provider)
@@ -117,12 +136,13 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.config_panel)
         self.resume_previous = QPushButton('Khôi phục cấu hình công việc chưa hoàn thành')
         self.resume_previous.clicked.connect(self.restore_previous)
-        outer.addWidget(self.resume_previous)
+        folder_layout.addWidget(self.resume_previous)
         cache = TranslationCache(self.cache_path)
         self.pending_options = cache.pending_job()
         cache.close()
         self.resume_previous.setVisible(self.pending_options is not None)
-        controls = QHBoxLayout()
+        controls = QGridLayout()
+        controls.setSpacing(8)
         self.start_button = QPushButton('Bắt đầu dịch')
         self.start_button.setObjectName('primary')
         self.pause_button = QPushButton('Tạm dừng')
@@ -130,12 +150,21 @@ class MainWindow(QMainWindow):
         self.cancel_button = QPushButton('Hủy')
         self.retry_button = QPushButton('Thử lại ảnh lỗi / chưa xong')
         self.open_button = QPushButton('Mở kết quả')
+        self.review_button = QPushButton('Trang cần xem lại / log')
+        self.review_button.setEnabled(False)
+        self.review_button.clicked.connect(self.show_review)
+        folder_layout.addWidget(self.review_button)
         self.models_button = QPushButton('Quản lý mô hình AI')
         self.settings_button = QPushButton('Cài đặt')
-        for button in [self.start_button, self.pause_button, self.continue_button, self.cancel_button,
-                       self.retry_button, self.open_button, self.models_button, self.settings_button]:
-            controls.addWidget(button)
-        outer.addLayout(controls)
+        for position, button in enumerate([self.start_button, self.pause_button, self.continue_button,
+                                          self.cancel_button, self.retry_button, self.open_button]):
+            controls.addWidget(button, position // 3, position % 3)
+        folder_layout.addLayout(controls)
+        common = QHBoxLayout()
+        common.addStretch()
+        common.addWidget(self.models_button)
+        common.addWidget(self.settings_button)
+        outer.addLayout(common)
         self.start_button.clicked.connect(lambda: self.start())
         self.pause_button.clicked.connect(self.pause)
         self.continue_button.clicked.connect(self.resume)
@@ -147,14 +176,14 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setFormat('%p%')
-        outer.addWidget(self.progress)
+        folder_layout.addWidget(self.progress)
         self.current = QLabel('Sẵn sàng. Cài model qua Quản lý mô hình AI trước khi dịch.')
         self.current.setWordWrap(True)
-        outer.addWidget(self.current)
+        folder_layout.addWidget(self.current)
         self.stats = QLabel('Tổng số ảnh: 0  •  Hoàn thành: 0  •  Lỗi: 0  •  Bỏ qua: 0')
         self.clock_label = QLabel('Đã chạy: 00:00:00  •  Còn lại: Đang ước tính')
-        outer.addWidget(self.stats)
-        outer.addWidget(self.clock_label)
+        folder_layout.addWidget(self.stats)
+        folder_layout.addWidget(self.clock_label)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(['Tên file', 'Ngôn ngữ', 'Trạng thái', 'Tiến trình', 'Kết quả / Chi tiết'])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -162,12 +191,29 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.cellDoubleClicked.connect(self.inspect)
-        outer.addWidget(self.table, 1)
-        outer.addWidget(QLabel('Nhấp đúp một hàng để xem ảnh trước/sau hoặc chi tiết lỗi. Nền phức tạp và chữ dọc cần kiểm tra preview.'))
+        self.table.setMinimumHeight(230)
+        folder_layout.addWidget(self.table, 1)
+        hint = QLabel('Nhấp đúp để xem ảnh trước/sau hoặc chi tiết lỗi. Nền phức tạp và chữ dọc cần kiểm tra preview.')
+        hint.setWordWrap(True)
+        folder_layout.addWidget(hint)
         self.eta = None
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.update_clock)
+        from ui.comic_sources import ComicSourcesPanel
+        self.image_panel = ComicSourcesPanel(self.options, settings_path=CONFIG / 'single_source.json',
+            database=cache_path, fixed_kind=0, options_factory=self.collect_options)
+        self.url_panel = ComicSourcesPanel(self.options, settings_path=CONFIG / 'url_source.json',
+            database=cache_path, fixed_kind=2, options_factory=self.collect_options)
+        self.source_tabs.addTab(self.image_panel, 'Ảnh đơn')
+        self.source_tabs.addTab(self.folder_page, 'Thư mục ảnh')
+        self.source_tabs.addTab(self.url_panel, 'Link truyện online')
+        self.source_tabs.setCurrentIndex(1)
+        self.source_tabs.currentChanged.connect(self.update_mode)
+        for panel in (self.image_panel, self.url_panel):
+            panel.busyChanged.connect(self.set_running)
+        self.url_panel.importRequested.connect(lambda: self.source_tabs.setCurrentIndex(1))
+        outer.addWidget(self.source_tabs, 1)
         self.set_running(False)
         self.setStyleSheet('''
             QMainWindow, QDialog { background: #111827; color: #e5e7eb; }
@@ -182,9 +228,16 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background: #334155; }
             QPushButton#primary { background: #2563eb; font-weight: 600; }
             QPushButton:disabled { color: #6b7280; background: #1f2937; }
+            QScrollArea, QScrollArea > QWidget > QWidget { background: #111827; }
+            QTabWidget::pane { border: 1px solid #374151; border-radius: 7px; padding: 8px; }
+            QTabBar::tab { background: #1f2937; padding: 12px 24px; margin-right: 4px; }
+            QTabBar::tab:selected { background: #2563eb; color: white; }
             QTableWidget { background: #172033; alternate-background-color: #1f2937; gridline-color: #374151; }
             QHeaderView::section { background: #273449; padding: 8px; border: 0; }
-            QProgressBar { border: 1px solid #374151; text-align: center; min-height: 22px; border-radius: 4px; }
+            QTableCornerButton::section { background: #273449; border: 0; }
+            QScrollBar:vertical { background: #111827; width: 12px; }
+            QScrollBar::handle:vertical { background: #475569; min-height: 24px; border-radius: 4px; }
+            QProgressBar { background: #1f2937; border: 1px solid #374151; text-align: center; min-height: 22px; border-radius: 4px; }
             QProgressBar::chunk { background: #2563eb; }
         ''')
 
@@ -195,12 +248,18 @@ class MainWindow(QMainWindow):
 
     def update_mode(self, *_args) -> None:
         mode = self.mode.currentText()
-        self.online_provider.setEnabled(mode != 'Offline')
-        self.offline_provider.setEnabled(mode != 'Online')
-        self.allow_fallback.setEnabled(mode == 'Auto Fallback')
+        folder = self.source_tabs.count() == 0 or self.source_tabs.currentIndex() == 1
+        for widget in (self.mode, self.mode_label, self.online_provider, self.online_label, self.allow_fallback):
+            widget.setVisible(folder)
+        self.online_provider.setEnabled(folder and mode != 'Offline')
+        self.offline_provider.setEnabled(not folder or mode != 'Online')
+        self.allow_fallback.setEnabled(folder and mode == 'Auto Fallback')
         self.privacy.setText('Offline: toàn bộ OCR và dịch chạy cục bộ; thiếu model sẽ báo lỗi, không tải hoặc gửi dữ liệu.' if mode == 'Offline'
                              else 'Online: chỉ gửi văn bản OCR để dịch. MyMemory có hạn mức miễn phí; ảnh luôn xử lý trên máy.' if mode == 'Online'
                              else 'Auto Fallback: thử Offline trước. Chỉ gọi Online khi ô đồng ý được bật.')
+        if not folder:
+            self.privacy.setText('Dịch ảnh/chương bằng Offline với cấu hình OCR, font và xuất ảnh hiện tại. '
+                                 'Phân tích URL chỉ đọc thông tin website; không gửi văn bản OCR ra mạng.')
 
     def collect_options(self) -> Options:
         self.options.source = self.source.text().strip()
@@ -223,7 +282,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Thiếu thư mục', 'Chọn thư mục nguồn và thư mục xuất trước.')
             return
         try:
-            save_options(options)
+            if self.persist_settings:
+                save_options(options)
         except OSError as exc:
             QMessageBox.critical(self, 'Không lưu được cấu hình', str(exc))
             return
@@ -231,6 +291,8 @@ class MainWindow(QMainWindow):
         self.unfinished = []
         self.outputs = {}
         self.details = {}
+        self.review_pages = []
+        self.review_button.setEnabled(False)
         self.rows = {}
         self.table.setRowCount(0)
         self.progress.setValue(0)
@@ -248,6 +310,8 @@ class MainWindow(QMainWindow):
 
     def set_running(self, running: bool) -> None:
         self.config_panel.setEnabled(not running)
+        self.folder_inputs.setEnabled(not running)
+        self.source_tabs.tabBar().setEnabled(not running)
         self.start_button.setEnabled(not running)
         self.pause_button.setEnabled(running)
         self.continue_button.setEnabled(False)
@@ -274,6 +338,8 @@ class MainWindow(QMainWindow):
             return
         if kind == 'finished':
             self.failed = event['errors']
+            self.review_pages = event.get('review_pages', self.review_pages)
+            self.review_button.setEnabled(bool(self.review_pages))
             if event['state'] == 'done':
                 self.current.setText('Đã hoàn tất. Nhấp đúp hàng để xem trước kết quả và cảnh báo.')
                 self.progress.setValue(1000)
@@ -281,6 +347,11 @@ class MainWindow(QMainWindow):
                 self.current.setText('Đã hủy an toàn. Kết quả đã hoàn thành và checkpoint được giữ lại.')
             elif event['state'] == 'errors':
                 self.current.setText('Batch kết thúc với ảnh lỗi. Xem chi tiết và dùng nút Thử lại sau khi khắc phục.')
+            elif event['state'] == 'completed_with_warnings':
+                self.current.setText(f"Đủ file xuất: {event['files_exported']}/{event['total']} • "
+                    f"Dịch hoàn chỉnh: {event['translated_success']} • Ảnh gốc dự phòng: {event['fallback_original']} • "
+                    f"Cần xem lại: {len(event['needs_retry'])}")
+                self.progress.setValue(1000)
             return
         path = event.get('file')
         if path not in self.rows:
@@ -298,11 +369,22 @@ class MainWindow(QMainWindow):
             self.table.item(row, 4).setToolTip(event['detail'])
             if not event.get('output'):
                 self.table.item(row, 4).setText(event['detail'])
-        terminal = event['stage'] in ('Hoàn thành', 'Bỏ qua', 'Lỗi')
+        if event.get('review'):
+            self.review_pages.append(event['review'])
+        terminal = event['stage'] in ('Hoàn thành', 'Bỏ qua', 'Lỗi', 'Ảnh gốc dự phòng')
         if terminal and path in self.unfinished:
             self.unfinished.remove(path)
         self.current.setText(f"Đang xử lý: {Path(path).name}  •  Công đoạn: {event['stage']}  •  {event['index']} / {event['total']} ảnh")
-        self.stats.setText(f"Tổng số ảnh: {event['total']}  •  Hoàn thành: {event['completed']}  •  Lỗi: {event['failed']}  •  Bỏ qua: {event['skipped']}")
+        if event.get('review'):
+            review = event['review']
+            self.current.setText(f"Trang {review['image_index']} • {review['image_filename']} • {review['stage']} • "
+                f"{review.get('provider') or '—'} • {review['error_code']} • {review['output_status']}\n"
+                f"{review.get('diagnostic_path') or review.get('diagnostic_error') or 'Không ghi được diagnostic'}")
+            self.details[path] = event.get('detail', '') + '\n' + self.current.text()
+            self.table.item(row, 4).setToolTip(self.details[path])
+        self.stats.setText(f"Tổng: {event['total']} • Dịch mới: {event['completed']} • "
+            f"Ảnh gốc dự phòng: {event.get('fallback_original', 0)} • Không output: {event.get('failed_no_output', event['failed'])} • "
+            f"Bỏ qua: {event['skipped']}")
         fractional = event['index']-1 + event['percent']/100
         self.progress.setValue(int(1000*fractional/max(1, event['total'])))
         self.eta = event.get('eta')
@@ -362,17 +444,26 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(self, 'Thư mục kết quả', 'Thư mục kết quả chưa tồn tại.')
 
+    def show_review(self) -> None:
+        from ui.review_dialog import ReviewDialog
+        ReviewDialog(self.review_pages, self).exec()
+
     def show_models(self) -> None:
         ModelManagerDialog(self).exec()
+
+    def show_comic_sources(self) -> None:
+        self.source_tabs.setCurrentIndex(2)
 
     def show_settings(self) -> None:
         self.collect_options()
         if SettingsDialog(self.options, self).exec():
-            save_options(self.options)
+            if self.persist_settings:
+                save_options(self.options)
 
     def restore_previous(self) -> None:
         if self.pending_options:
-            save_options(self.pending_options)
+            if self.persist_settings:
+                save_options(self.pending_options)
             # Reconstruct widget state in-place without starting a second window.
             p = self.pending_options
             self.options = Options.from_dict(p.to_dict())
@@ -389,13 +480,19 @@ class MainWindow(QMainWindow):
             self.current.setText('Đã khôi phục cấu hình. Bấm Bắt đầu dịch; ảnh thành công có checksum hợp lệ sẽ được bỏ qua.')
 
     def closeEvent(self, event) -> None:
+        for panel in (self.image_panel, self.url_panel):
+            if panel.worker and panel.worker.isRunning():
+                panel.cancel_job()
+                event.ignore()
+                return
         if self.worker and self.worker.isRunning():
             self.cancel()
             QMessageBox.information(self, 'Đang hủy công việc', 'Chờ công việc dừng an toàn rồi đóng cửa sổ.')
             event.ignore()
         else:
             try:
-                save_options(self.collect_options())
+                if self.persist_settings:
+                    save_options(self.collect_options())
             except OSError:
                 pass
             event.accept()

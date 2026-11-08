@@ -11,7 +11,7 @@ ROOT = Path(sys.executable).resolve().parents[2] if getattr(sys, 'frozen', False
 
 def source_fingerprint(root: Path = ROOT) -> str:
     paths = [root/'main.py', root/'requirements.txt', root/'ImageTranslatorVN.spec']
-    for folder in ['core', 'providers', 'ui', 'scripts']:
+    for folder in ['core', 'providers', 'ui', 'sources', 'scripts']:
         paths += list((root/folder).glob('*.py'))
     h = hashlib.sha256()
     for path in sorted(paths):

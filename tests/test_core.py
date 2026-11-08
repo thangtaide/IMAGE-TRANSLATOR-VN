@@ -417,11 +417,15 @@ class PipelineTests(WorkspaceCase):
         self.assertEqual(ocr.calls, 1)
         self.assertEqual(provider.calls, 1)
 
-    def test_translation_failure_exports_nothing(self):
-        self.image()
+    def test_translation_failure_exports_verified_original_not_translation(self):
+        source = self.image()
         result = self.manager(provider=FakeProvider(fail=True)).run()
         self.assertEqual(result['failed'], 1)
-        self.assertFalse(list(self.output.rglob('*.png')))
+        self.assertEqual(result['state'], 'completed_with_warnings')
+        self.assertEqual(result['translated_success'], 0)
+        self.assertEqual(result['fallback_original'], 1)
+        output = Path(result['review_pages'][0]['output_path'])
+        self.assertEqual(file_digest(output), file_digest(source))
 
     def test_batch_continues_on_corruption_and_retries_only_error(self):
         good = self.image('1.png')

@@ -1,5 +1,28 @@
 # E2E thực tế — 06/11/2026
 
+## Mới nhất 07/11/2026 — GUI tab và EXE mới
+
+Source E2E chuẩn PASS tại `output/e2e-validation/20261107T045351Z-fd62c9/`.
+**EXE mới E2E ảnh truyện thật PASS** tại
+`output/e2e-validation/20261107T045858Z-42bf8c/`, không mock OCR/MT.
+Binary tab workflow PASS tại `output/source-tabs-validation/20261107T045845Z-6f3417/`:
+ảnh đơn + folder + pause/resume + lỗi URL/network + source/config integrity.
+Live Kuaikan chapter/downloader chưa xác minh, không dùng các kết quả local này
+để tuyên bố URL → ảnh PASS. Chi tiết `docs/GUI_URL_FLOW_REPORT.md`.
+
+## Bổ sung 07/11/2026 — nguồn ảnh/chương cục bộ
+
+Pipeline Offline cũ vẫn PASS sau tích hợp nguồn mới; lượt cuối:
+`output/e2e-validation/20261107T042612Z-cd1450/report.json` (fixture tổng hợp,
+OCR/MT thật, không dùng mock). Evidence cuối và source fingerprint hiện tại xem
+`docs/ONLINE_COMIC_TEST_REPORT.md`.
+
+Luồng GUI nguồn mới với 2 ảnh truyện do người dùng cung cấp có OCR/dịch thật,
+3 vùng/3 bản dịch, 2 ảnh xuất và nguồn không đổi. Qt Windows đã kiểm tra thêm
+ảnh đơn, pause/resume, worker mới, cancel/retry và lỗi URL/mạng. Dữ liệu này là
+LOCAL, không phải ảnh được tải từ Kuaikan; URL → download → E2E vẫn BLOCKED.
+Không đồng nhất PASS kỹ thuật với nghiệm thu chất lượng dịch/mask.
+
 ## Kết quả cuối với ImgTest và EXE mới
 
 Người dùng đã cung cấp `D:\TransTool\ImgTest`. Pipeline chuẩn sau sửa số chạy **61/61 ảnh, 0 lỗi**, nguồn giữ nguyên hash và kích thước. Evidence đầy đủ từng ảnh ở `output/real-image-validation-20261106-numeric-fix/`, báo cáo đánh giá **REAL_IMAGE_REPORT.md**. Có 75 vùng chữ dịch thật, 2 vùng số/ký hiệu bảo toàn và 24 ảnh raw OCR không tìm thấy chữ; không suy ra 61 bản dịch đạt ngữ nghĩa.

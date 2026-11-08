@@ -1,5 +1,53 @@
 # Báo cáo build — lượt tiếp tục 06/11/2026
 
+## Adapter chương 281106 — 07/11/2026, lượt sau GUI tab
+
+**Không build EXE mới cho thay đổi adapter này.** URL chương đã được hỗ trợ và
+fallback HTML parser có fixture test, nhưng thiếu DOM Kuaikan thật để nghiệm thu
+chapter/image parser; runtime mạng bị chặn. Không biến fixture PASS thành live
+hoặc EXE website PASS. Giữ nguyên bản GUI tab đã kiểm thử ở mục dưới.
+Mã nguồn mới có thể chạy bằng run_source.bat; cần captured DOM/kiểm tra live hợp lệ
+trước khi phát hành binary adapter mới. Xem docs/KUAIKAN_CHAPTER_281106_ANALYSIS.md.
+
+## Mới nhất — GUI ba tab, 07/11/2026
+
+**Build onedir PASS và chính EXE đã kiểm thử thật.** Chạy build.bat không chỉnh
+gate/BAT/spec; prerequisite GUI/E2E + pip check + pytest 116 PASS/7 SKIPPED, sau đó
+PyInstaller thành công. Tên riêng bảo toàn các EXE trước.
+
+`dist/ImageTranslatorVN-20261107T045417969128Z/ImageTranslatorVN-20261107T045417969128Z.exe`
+(19,799,672 byte), SHA-256 `99baadc76bc0836781ac7db43674f1a4e7b93be3e5344d6d47c0b5357bbe517c`.
+Log `logs/build-ImageTranslatorVN-20261107T045417969128Z.log`.
+
+- Tab workflow Windows thật: PASS, frozen=True,
+  `output/source-tabs-validation/20261107T045845Z-6f3417/report.json`.
+- GUI smoke chính binary: PASS,
+  `logs/gui-smoke-20261107T045856Z-bf49d7/report.json`.
+- E2E Offline ảnh truyện thật chính binary: PASS,
+  `output/e2e-validation/20261107T045858Z-42bf8c/report.json`.
+- Model/font/DLL/import/export hoạt động trong các ca đã chạy. Source fingerprint
+  `a7e5b4f70ca01a409f00ab02205a12bfd164c5ad498ba8ac781e47226ffa87ea`.
+- URL error UI PASS; Kuaikan live chapters/downloader vẫn UNVERIFIED/UNKNOWN,
+  không gọi là đầy đủ website SUPPORTED. Không dùng binary PASS để thay live test.
+
+Xem `docs/GUI_URL_FLOW_REPORT.md`. Những mục SKIPPED bên dưới là lịch sử lượt trước.
+
+## Tính năng nguồn ảnh/URL — 07/11/2026
+
+**Build mới: SKIPPED; EXE có tính năng URL: NOT TESTED.** Source đã thêm adapter,
+cache/chương và GUI; Kuaikan chưa có quyền tải tự động/danh sách chương/ảnh được
+xác minh, nên chưa đủ nghiệm thu luồng URL để đóng gói bản phát hành tính năng này.
+Không chạy PyInstaller rồi suy diễn tính năng URL đã PASS.
+
+BAT/spec và ba EXE cũ giữ nguyên SHA-256; evidence
+`logs/online-comic-20261107/preservation-after.json`. Không ghi đè hoặc xóa bản cũ.
+`scripts/qa_common.py` bổ sung `sources/*.py` vào fingerprint, giữ nguyên các gate
+GUI/E2E thật, cùng source và interpreter. Các import mới là module Python local
+thông thường; mới rà soát tĩnh, chưa xác minh dependency collection bằng build.
+
+Chạy mã mới bằng **`run_source.bat`**. Khi sau này build tên mới, phải kiểm thử
+chính binary với Offline và trạng thái URL thực; source PASS không phải EXE PASS.
+
 ## Binary cuối đã kiểm chứng — 06/11/2026, sau sửa số trên corpus thật
 
 **Build PASS; chính binary chạy PASS các luồng bên dưới.** Đã dùng `build.bat < nul` và spec hiện có, gate PASS đúng source/interpreter; pip check PASS, pytest **76 PASS, 7 SKIPPED**. Log `logs/build-ImageTranslatorVN-20261106T101857052219Z.log` kết thúc `Build complete!`.

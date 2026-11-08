@@ -9,6 +9,10 @@ from core.storage import configure_logging
 def main() -> int:
     initialize()
     configure_logging()
+    if '--validate-source-tabs' in sys.argv:
+        sys.argv.remove('--validate-source-tabs')
+        from scripts.validate_source_tabs import main as validate_source_tabs
+        return validate_source_tabs()
     if '--validate-gui-workflow' in sys.argv:
         sys.argv.remove('--validate-gui-workflow')
         from scripts.validate_gui_workflow import main as validate_gui_workflow

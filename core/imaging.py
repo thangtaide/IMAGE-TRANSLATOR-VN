@@ -169,7 +169,7 @@ class TextRenderer:
         return output
 
 
-def atomic_save(image: Image.Image, destination: Path, quality: int = 95) -> list[str]:
+def atomic_save(image: Image.Image, destination: Path, quality: int = 95, *, overwrite: bool = True) -> list[str]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     formats = {'.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG', '.webp': 'WEBP', '.bmp': 'BMP'}
     fmt = formats[destination.suffix.lower()]
@@ -191,7 +191,12 @@ def atomic_save(image: Image.Image, destination: Path, quality: int = 95) -> lis
             check.load()
             if check.size != image.size:
                 raise IOError('Ảnh xuất không đúng độ phân giải')
-        os.replace(temp, destination)
+        if overwrite:
+            os.replace(temp, destination)
+        elif os.name == 'nt':
+            os.rename(temp, destination)
+        else:
+            os.link(temp, destination)
     finally:
         temp.unlink(missing_ok=True)
     return warnings

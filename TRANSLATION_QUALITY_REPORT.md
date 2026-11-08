@@ -1,5 +1,15 @@
 # Kiểm tra chất lượng Offline — 06/11/2026
 
+## Cập nhật Stage3 — 08/11/2026
+
+Benchmark mới150 mẫu OCR thật,99dev/51holdout,0 independent human references.
+Thử4 ứng viên QA; LP1.0 có regression số holdout, handler ngày chưa promotion.
+Không đổi production/guard/model/cache hoặc phục hồi111. Chất lượng tổng thể
+chưa có đủ reference để công bố accuracy. **STAGE_3_RESEARCH_ONLY**.
+Chi tiết đầy đủ và nguồn model direct mới xác minh:
+[STAGE3_TRANSLATION_QUALITY_REPORT.md](docs/STAGE3_TRANSLATION_QUALITY_REPORT.md).
+Các kết quả24/61 ảnh dưới đây giữ lịch sử, không thay cho benchmark150 mẫu mới.
+
 ## Quan sát trên 61 ảnh truyện thật — sau 10:18 UTC
 
 Đã nhận corpus `ImgTest`, suy luận OCR/Argos thật qua pipeline chuẩn. Sau sửa kỹ thuật bảo vệ số, 61 ảnh xử lý xong, 75 vùng chữ dịch thật, 2 vùng số/ký hiệu giữ nguyên; **không nghiệm thu ngữ nghĩa**. Chi tiết `REAL_IMAGE_REPORT.md` và `output/real-image-validation-20261106-numeric-fix/`.

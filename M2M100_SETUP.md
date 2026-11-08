@@ -1,5 +1,19 @@
 # M2M100 Offline — trạng thái và cài model cục bộ
 
+## Cập nhật nghiên cứu Stage3 — 08/11/2026
+
+M2M100 vẫn **chưa có weights**, không inference/convert hoặc thay Argos. Đã
+đọc metadata chính thức HTTP200 và license MIT, PyTorch weights1.935.796.948B;
+revision/checksum server trong
+`logs/stage3-translation-quality-20261107T204426Z/model-metadata.json`.
+Đây chưa phải hash file model đã tải cục bộ. RAM/latency/chất lượng M2M100 chưa đo.
+
+CT2 hiện4.6.0 có loader M2M100; **Transformers chưa cài**, không tự cài để
+convert. Nghiên cứu thêm OPUS zh-vi và NLLB không đồng nghĩa đã tích hợp hoặc
+model tốt hơn. Xem `docs/STAGE3_TRANSLATION_QUALITY_REPORT.md` và evidence
+`model-comparison.md` trước đề xuất tải được phê duyệt. Không tải model trong job
+Offline; không dùng trạng thái sandbox cũ dưới đây để mô tả mạng hiện tại.
+
 ## Trạng thái sau khôi phục 06/11/2026
 
 Provider riêng `providers/m2m100.py` đã được tích hợp vào lựa chọn Offline của GUI và factory của pipeline. Argos vẫn giữ nguyên và là mặc định. **Chưa có trọng số M2M100 trên máy**, người dùng đã xác nhận; suy luận và chất lượng M2M100 **NOT TESTED**. Unit contract tests dùng mock được ghi rõ; không coi chúng là bằng chứng model dịch được.

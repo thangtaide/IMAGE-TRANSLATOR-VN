@@ -1,5 +1,17 @@
 # Báo cáo cài đặt Image Translator VN
 
+## Xác minh sau mở rộng nguồn ảnh — 07/11/2026
+
+`scripts/check_installation.py`: **16/16 imports, 18/18 requirements, Ready True**,
+evidence `logs/install-audit-20261107T041423Z`. Không cài lại/nâng dependency,
+không đổi `.venv`, setuptools/CT2, DLL/PATH hoặc model. Module nguồn mới dùng
+stdlib và Pillow/PySide6 hiện có. Năm model xác minh lại và integrity receipt
+không đổi: `logs/online-comic-20261107/preservation-after.json`.
+
+Chế độ URL còn bị giới hạn mạng sandbox/proxy và quyền tải chưa xác minh; đây
+không phải lỗi thiếu dependency. Không bỏ proxy để thử tải. `run_source.bat`
+mới mở mã Python hiện tại, giữ nguyên các BAT và EXE đã có.
+
 ## Audit cuối sau sửa trên ảnh thật — 10:26 UTC
 
 Chạy lại `scripts/check_installation.py`: **16/16 imports PASS, 18/18 dependencies, Ready: True**. Evidence `logs/install-audit-20261106T102603Z/installation.json`. Verify lại det-ch/rec-zh/cls/zh_en/en_vi đều OK. Không cài/thay package, không nâng setuptools 80.9.0 hoặc CT2 4.6.0, không tải/xóa model.

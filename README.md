@@ -1,5 +1,103 @@
 # IMAGE TRANSLATOR VN
 
+## Hiện tại — Stage3 chỉ nghiên cứu QA, 08/11/2026
+
+Đã đánh giá150 vùng OCR thật, tách99development/51holdout; chưa có reference
+dịch được người rà soát độc lập. Không thay engine/default/decode/numeric guard
+của ứng dụng. LP1.0 có regression số nên không áp dụng; date handler chỉ ở QA,
+chưa nối production. Trang111 vẫn fallback, chương274872 giữ120 output/119
+hoàn tất pipeline/1 cần xem lại; không tự retry hoặc ghi đè output.
+
+Chạy app vẫn **run_source.bat**, EXE cũ giữ nguyên. Benchmark/dataset/model
+research và mẫu điền tham chiếu tại
+[STAGE3_TRANSLATION_QUALITY_REPORT.md](docs/STAGE3_TRANSLATION_QUALITY_REPORT.md).
+Thư mục `qa/` là công cụ nghiên cứu, không phải provider mới trong GUI. Chưa tải
+model direct, cài dependency, làm Stage4/5 hoặc build EXE. Các mục dưới là lịch sử.
+
+## Hiện tại — Stage 2 phục hồi hai trang, 08/11/2026
+
+Chương274872 hiện có **120/120 output**,119 ảnh hoàn tất pipeline và1 bản gốc
+dự phòng cần xem lại. Trang74 bỏ đúng OCR hoa văn theo hash/polygon, không cần
+MT, giữ nguyên byte ảnh. Trang111 có raw target mới `20 giờ 30 tháng 5`, sai
+nghĩa khoảng ngày; guard vẫn từ chối và giữ `original/0111.jpg`. Không gọi119
+ảnh hoàn tất là119 ảnh đều đã dịch văn bản. Không đổi model hoặc nới guard ngày.
+
+Source hỗ trợ override có evidence/version ở `overrides/ocr_regions.json`,
+cache OCR gốc giữ nguyên; chi tiết tại [USER_GUIDE.md](docs/USER_GUIDE.md).
+Guard dấu số đã siết có version/cache policy riêng. Dùng **run_source.bat**;
+không build EXE mới. Stage3 chưa thực hiện. Báo cáo:
+[STAGE2_NUMERIC_OCR_RECOVERY_REPORT.md](docs/STAGE2_NUMERIC_OCR_RECOVERY_REPORT.md).
+Các mục Stage1/adapter cũ dưới đây giữ lịch sử, không phải trạng thái mới nhất.
+
+## Hiện tại — Stage 1 diagnostic và ảnh dự phòng, 08/11/2026
+
+Source mới có diagnostic theo ảnh, xuất nguyên ảnh gốc khi OCR/MT/render lỗi
+và phân biệt `FALLBACK_ORIGINAL` với dịch hoàn chỉnh. Chương đủ file còn fallback
+hiển thị `COMPLETED_WITH_WARNINGS`; retry dùng cache chỉ cho trang cần xem lại.
+Dùng **run_source.bat**. Chưa build EXE chứa Stage 1, chưa phục hồi hai trang
+0074/0111 thật. Xem [USER_GUIDE.md](docs/USER_GUIDE.md) và
+[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+Các mục cũ bên dưới giữ lịch sử; trạng thái Kuaikan hiện tại xem
+`PROJECT_STATUS.md`: live discovery/downloader mẫu đã kiểm thử theo user policy,
+không còn trạng thái chỉ fixture/chưa có downloader như báo cáo đầu tiên.
+
+## Adapter URL chương — thay đổi source sau bản EXE GUI tab
+
+Source hiện nhận cả URL topic và `/webs/comic-next/<chapter_id>`. URL chương có
+thể được phân tích độc lập danh sách truyện; image discovery không tải ảnh và
+không tự bật quyền download. Có nút **Phân tích ảnh chương** cho chương đã chọn.
+
+Parser HTML/DOM mới hiện chỉ PASS fixture viết tay, **chưa được xác minh với DOM
+Kuaikan thật** do giới hạn mạng. Cần DOM lưu từ trình duyệt; không dùng con số
+ảnh/chương trong fixture như kết quả website. Chưa build EXE chứa thay đổi này;
+dùng run_source.bat để chạy source hiện tại. Chi tiết:
+[KUAIKAN_CHAPTER_281106_ANALYSIS.md](docs/KUAIKAN_CHAPTER_281106_ANALYSIS.md).
+
+## Giao diện mới — ba tab nguồn
+
+EXE đã kiểm thử của giao diện này:
+`dist/ImageTranslatorVN-20261107T045417969128Z/ImageTranslatorVN-20261107T045417969128Z.exe`.
+Mở trực tiếp file đó; run.bat/run_updated.bat được giữ nguyên nên vẫn có thể mở bản cũ.
+
+Mở source bằng **run_source.bat**. Chọn trực tiếp **Ảnh đơn / Thư mục ảnh / Link
+truyện online** trên cửa sổ chính; không cần mở cửa sổ nguồn lớn. Tab ảnh đơn chọn
+file rồi Bắt đầu dịch. Tab thư mục giữ các tùy chọn/quy trình cũ. Tab URL có phân
+tích, thông tin truyện, chọn chương, retry danh sách, điều kiện tải theo chương.
+Các lỗi kết nối/phân tích được báo riêng, metadata giữ khi bước chương lỗi.
+
+Kuaikan chưa lấy được danh sách chương đủ kiểm chứng; điều kiện tải UNKNOWN và
+chưa có downloader. Vẫn nhập/phân tích URL được; dùng tab ảnh/thư mục cho ảnh đã
+lưu hợp lệ. Không mặc định public = được tải tự động.
+
+Xem **docs/GUI_URL_FLOW_REPORT.md** và **docs/WEBSITE_ADAPTER_AI_GUIDE.md** cho
+kiến trúc/trạng thái/test mới. Phần mô tả nút mở dialog bên dưới là lịch sử lượt đầu.
+
+## Nguồn ảnh và chương truyện — 07/11/2026
+
+Source Python bổ sung nút **Ảnh đơn / chương ảnh / link truyện online**. Mở source
+mới bằng **`run_source.bat`** (dùng `.venv` đã cài), hoặc
+`.venv\Scripts\python.exe main.py`. Các EXE và launcher cũ được giữ nguyên, chưa có
+tính năng này; không dùng EXE cũ để đánh giá giao diện URL mới.
+
+Trong cửa sổ nguồn, chọn ảnh đơn hoặc thư mục. Nếu thư mục gốc có ảnh, đó là một
+chương; nếu không, mỗi thư mục con chứa ảnh là một chương. Chọn nguồn → đọc danh
+sách → tự chọn chương → chọn nơi xuất → **Dịch ảnh đã có**. Luồng chương dùng
+Offline và cấu hình OCR/provider/font của cửa sổ chính; nguồn không bị sửa. Có
+pause/resume/cancel/retry, manifest, cache kiểm tra hash và xuất theo chương.
+Để tiếp tục sau khi đóng ứng dụng, chọn lại cùng nguồn/cấu hình/output rồi xử lý;
+checkpoint hợp lệ sẽ bỏ qua ảnh thành công. Cache mặc định được giữ lại.
+
+Kuaikan hiện **EXPERIMENTAL metadata / CHAPTERS UNVERIFIED / DOWNLOAD ACCESS
+RESTRICTED**: chưa xác minh quyền tải tự động và cấu trúc chương. Nút tải bị vô
+hiệu hóa. Phân tích link không tải ảnh; nếu mạng/HTML không phù hợp sẽ báo lỗi rõ.
+Sử dụng **Nhập chương từ ảnh đã lưu hợp lệ** để tiếp tục với ảnh người dùng cung cấp.
+Không coi việc hiển thị ảnh trên website là quyền tải tự động.
+
+Chi tiết: [phân tích Kuaikan](docs/KUAIKANMANHUA_ANALYSIS_REPORT.md),
+[kiểm thử tích hợp](docs/ONLINE_COMIC_TEST_REPORT.md),
+[hướng dẫn AI thêm website](docs/WEBSITE_ADAPTER_AI_GUIDE.md).
+
 Kho Git chỉ lưu mã nguồn, kiểm thử, script chạy/build, cấu hình mẫu và báo cáo: `https://github.com/thangtaide/IMAGE-TRANSLATOR-VN`. Không đưa `.venv`, model AI, EXE/build, backup, cache, log/evidence, ảnh `ImgTest` hoặc cấu hình cá nhân lên Git. Các đường dẫn artifact trong báo cáo là bằng chứng cục bộ của máy đã kiểm thử, không phải file kèm repository. Khi clone sang máy khác cần cài dependencies/model và build riêng; `run_updated.bat` dành cho binary đã xác minh tại máy hiện tại, `run.bat` hỗ trợ chạy mã Python khi chưa có EXE.
 
 Ứng dụng Windows OCR, dịch sang tiếng Việt, xóa chữ gốc và chèn bản dịch theo vùng OCR. Mã nguồn nằm trực tiếp tại **D:\TransTool**.

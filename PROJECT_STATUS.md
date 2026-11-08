@@ -1,5 +1,370 @@
 # Trạng thái Image Translator VN
 
+## Bổ sung quy trình Git/Fork — 08/11/2026
+
+Áp dụng yêu cầu từ Stage 3A trở đi: baseline Git trước sửa, kiểm tra ignore/diff/
+file review sau Stage; Codex không stage/commit/push/tag hoặc quản lý lịch sử.
+Đã cập nhật AGENTS.md và .gitignore; xem `docs/GIT_FORK_WORKFLOW.md` cho bàn giao,
+phân loại file, evidence và cách tự commit trong Fork. Chỉ thay quy trình/tài liệu,
+không triển khai Stage 3A/provider mới hoặc Stage 4/5. Repository main có thay đổi
+nhiều Stage chưa commit; giữ nguyên và yêu cầu review theo file/hunk.
+
+## Mới nhất — Stage3 đánh giá chất lượng, 08/11/2026 (+07)
+
+**STAGE_3_RESEARCH_ONLY**, không promotion hoặc phục hồi111. Từ183 vùng OCR thật
+của chương274872 +ImgTest, chọn150 mẫu source-only sau khử trùng,99development/
+51holdout theo family gần trùng.146 cần MT,4 preserve control. **0 independent
+human references**;1 kỳ vọng ngày từ task ghi riêng, không tính accuracy/BLEU/COMET.
+
+Argos baseline thật hai chặng giữ decode0.2:145/146 qua literal numeric guard,
+1 reject ngày111; Name2 tái hiện tại en→vi.158 historical cache occurrences
+khớp output mới, không phải bằng chứng dịch đúng. Lỗi còn ở zh→en (tên riêng,
+Rule13/birthday) và OCR/clipping/hoa văn cần rà soát; không quy toàn bộ cho pivot.
+
+Thử4 ứng viên QA riêng, freeze trước holdout: NFC0 output đổi; split6; LP1.0
+đổi61 và bỏ Name2 nhưng **thêm1 lỗi số holdout** (`分镜：墨墨子`→`Lỗi:% 1`), loại
+khỏi production. QA typed date tạo đúng `Từ ngày20/5 đến ngày30/5` cho source
+có delimiter;128 fixture/192 mutation qua,20 date inference bổ sung không được
+gọi là20 lỗi model. Natural date chỉ1 ở dev, holdout0; early-year0001 roundtrip
+proof chưa đạt. Handler chưa nối với production guard/cache; không coi QA pass
+là production pass, không nới guard hoặc dò lại LP theo holdout.
+
+Đọc nguồn/model card và3 GET metadata HF200 (~19KB), **không gửi OCR**,không
+Kuaikan/ảnh/weights. Xác minh OPUS zh-vi312MB Apache2.0,M2M1001.94GB MIT,
+NLLB600M2.46GB CC-BY-NC4.0; đều **chưa inference cục bộ**. Chưa Transformers,
+không cài/convert/tải. Máy chỉ có Argos2model pivot; không đổi default provider.
+
+**Pytest261 PASS,10 SKIPPED,0 FAIL; unittest261 PASS,10 SKIPPED,0 FAIL**.
+Thêm9 test QA. GUI Qt Windows/E2E pipeline cũ thật PASS,149heartbeat,2 vùng OCR/
+2 MT ở ảnh đơn; không phải candidate đã vào GUI.688/688 file bảo vệ giữ hash,
+DB/cache/manifest/checkpoint/120 output và4EXE nguyên vẹn.119 normal +1fallback,
+needs_retry=[111] không đổi. Production fingerprint bằng Stage2, không sửa core/
+providers/sources/ui/config, không đổi cache version/recipe hoặc build EXE.
+
+Code mới chỉ `qa/` và `tests/test_stage3_quality.py`; evidence
+`logs/stage3-translation-quality-20261107T204426Z/`: dataset-manifest.json,
+development/,holdout/,baseline.json,candidate-results.json,benchmark-metrics.json,
+human-reference-template.csv,outputs-for-review.csv,model-comparison.md,
+promotion-decision.json,regression-results.json,preservation.json,summary.json.
+Xem `docs/STAGE3_TRANSLATION_QUALITY_REPORT.md`; docs người dùng/model cập nhật.
+Dừng trước Stage4/5. Cần human review và chấp thuận thử model/integration trước
+khi nâng production; các lệnh chạy source/EXE hiện tại không đổi.
+
+## Mới nhất — Stage 2 phục hồi hai trang, 08/11/2026 (+07)
+
+**STAGE_2_COMPLETED_WITH_WARNINGS; dừng trước Stage3.** Đúng job
+`e82b4eb8abed1050602c5d01b62322bd021684c54cebb1715d62b206fd9feca8`, chương274872.
+Qua nút Retry/QThread Qt Windows thật, chỉ xử lý0074/0111 từ cache:
+**120/120 output hợp lệ,119 hoàn tất bình thường,1 FALLBACK_ORIGINAL,0 thiếu
+output; needs_retry=[111]**. 119 là hoàn tất pipeline, không phải119 ảnh có văn
+bản đã dịch. Trang74 không có vùng cần MT sau override; output giống nguyên
+byte nguồn, không fallback. Hash118 output và118 checkpoint cũ giữ nguyên.
+
+Override mới `core/ocr_overrides.py`, profile `overrides/ocr_regions.json`:
+hash+text+polygon chính xác, evidence/version/enabled; không hardcode filename
+trong OCR core, không sửa raw OCR cache. Hash/polygon mismatch giữ fallback và
+diagnostic; có thể thu hồi. Job ID không đổi; chỉ fingerprint trang74 thêm
+revision override. Cache OCR gốc của mọi job giữ nguyên.
+
+Raw target **mới Stage2** trang111: `20 giờ 30 tháng 5`; zh→en: `20-30 May`,
+en→vi sai nghĩa khoảng ngày thành thời gian. Source cache thật có dấu gạch:
+`5月20日—5月30日`. **PROVIDER_NUMERIC_ERROR ở kết quả pivot cuối**, guard từ
+chối phù hợp; không nới kiểm tra ngày, không sửa số bằng thay chuỗi. Raw target
+lịch sử vẫn không có. Trang111 giữ nguồn nguyên byte tại `original/0111.jpg`.
+
+Test C2 phát hiện riêng guard cũ bỏ qua dấu đầu số. Siết thành
+`literal-numbers-v2-signed`; có3 test đỏ trước sửa, sau sửa PASS. Cache có dấu
+dùng namespace v4, không tin legacy signed cache; unsigned cache v3 giữ nguyên.
+Giữ pipeline identity cũ để resume;118 output cũ không được gọi là đã revalidate
+v2. Không đổi model, provider, tokenizer/beam/Online hoặc native import guard.
+
+**Pytest252 PASS,10 SKIPPED,0 FAIL; unittest252 PASS,10 SKIPPED,0 FAIL**.
+Thêm21 test. Qt Windows recovery GUI/review dialog PASS, heartbeat71; E2E
+fixture tổng hợp OCR/MT/CV/Pillow thật PASS, không mock. Phục hồi dùng OCR cache
+thật, không inference OCR lại. **0 network attempts/0 download/0 build**.
+
+Evidence `logs/stage2-recovery-20261107T200532Z/`: preflight.json,
+snapshot/, before-commit/, after-commit/, probe-results.json, recovery-result.json,
+pytest-final.xml, unittest-final.json, synthetic-e2e-result.json, preservation.json.
+Chỉ job row mục tiêu,2 item checkpoint và2 page manifest được cập nhật; thêm
+3 cache row output-hash/metadata. Mọi cache row có sẵn,118 page entry, checkpoint
+thành công và job khác giữ nguyên. Model/config/BAT/spec/DOM/4 EXE giữ hash.
+
+Chạy run_source.bat; EXE cũ chưa có Stage2. Xem
+`docs/STAGE2_NUMERIC_OCR_RECOVERY_REPORT.md`; USER_GUIDE, TROUBLESHOOTING,
+README và adapter guide đã cập nhật. Trang111 vẫn cần sửa chất lượng dịch ở
+stage sau; chưa Stage3/4/5, chưa portable/new model/benchmark chất lượng.
+
+## Mới nhất — Stage 1 diagnostic/fallback/retry, 08/11/2026 (+07)
+
+**Stage 1 hoàn thành và kiểm thử source; dừng trước Stage 2 theo yêu cầu.**
+Ảnh lỗi được thử xuất bản sao nguyên byte đã kiểm tra ở đường dẫn riêng,
+không dùng ảnh inpaint dở. `FALLBACK_ORIGINAL` không phải dịch thành công, item
+checkpoint `fallback_original`, vẫn needs_retry; ảnh hỏng/không ghi được là
+`FAILED_NO_OUTPUT`. Chưa bật xuất dịch một phần. Đủ file còn fallback là
+`completed_with_warnings` / GUI COMPLETED_WITH_WARNINGS, đếm riêng dịch hoàn
+chỉnh, gốc, thiếu output, bỏ qua và xem lại. Output thành công có hash/checkpoint
+hợp lệ luôn giữ nguyên, kể cả config cũ skip_success=false.
+
+Diagnostic giới hạn 4 MB/1.000 record/job, văn bản2.048 ký tự/trường, numeric
+tokens có giới hạn; fsync/giữ dòng dở cũ, ẩn URL/credential, tắt ghi nội dung
+trong Cài đặt. Raw target chỉ có cho lỗi **mới**. Thêm danh sách Trang cần xem
+lại / mở log. Download error trước pipeline dùng transfer job riêng. Retry
+URL/ảnh đơn từ ChapterCache xác minh hash, không HTTP/CDN, chỉ gửi trang cần
+xem lại vào pipeline, ánh xạ theo đường dẫn giữ đúng trang. Schema SQLite không
+đổi; manifest v1 thêm field tương thích. diagnostic_text không tham gia recipe.
+Tính lại ID job chương274872 khớp chính xác ID cũ; không chạy job đó.
+
+**Pytest231 PASS,10 SKIPPED,0 FAIL; unittest231 PASS,10 SKIPPED,0 FAIL**.
+Thêm24 test; một test cũ đổi kỳ vọng theo hành vi fallback mới. Test lỗi dùng
+mock OCR/MT có phân loại riêng. OCR zh / MT en→vi và zh→en→vi thật PASS.
+GUI **Qt Windows** và ProcessingManager thật: ảnh đơn/thư mục,2 vùng OCR/MT
+trong ảnh đơn, pause/resume, heartbeat155, nguồn/config không đổi,0 request mạng.
+Captured DOM/cache/output/native guard còn PASS. Live web/download và EXE mới
+NOT_TESTED trong stage này. Không build, không cài dependency/model.
+
+Evidence `logs/stage1-errors-20261107T174933Z/`: pytest-final.xml,
+unittest-final.json, existing-job-identity.json, preservation.json. GUI/E2E:
+`output/source-tabs-validation/20261107T181015Z-d76439/report.json`.
+556 file đã theo dõi: chỉ9 file source/test dự kiến đổi hash, không có thay
+đổi dữ liệu bảo vệ; database/checkpoint/manifest chương274872,120 nguồn/cache,
+118 output, config/DOM/BAT/model receipt và4 EXE giữ hash.
+
+**Chưa retry hai trang thật 0074/0111, chưa sửa validator/OCR override**, chưa
+benchmark chất lượng, chưa làm portable dependency management, chưa build EXE,
+chưa sửa .gitignore (Stage5). Các stage sau chờ xác nhận. Dùng run_source.bat.
+Xem `docs/STAGE1_ERROR_HANDLING_REPORT.md`, `docs/USER_GUIDE.md`,
+`docs/TROUBLESHOOTING.md`; AGENTS và website adapter guide đã cập nhật.
+
+## Mới nhất — DEFAULT_ALLOW_PUBLIC và downloader, 07/11/2026 từ 10:19 UTC
+
+Theo chỉ dẫn chủ ứng dụng, cấu hình mới `config/download_policy.json` mặc định
+`default_allow_public`. Quyền nội dung vẫn UNKNOWN; kết quả app là
+**ALLOWED_BY_USER_POLICY / USER_POLICY_DEFAULT_ALLOW**, không OFFICIAL_PERMISSION.
+Evidence/source/verified/applicability, owner policy, technical access và quyết
+định cuối tách riêng. Verified restriction luôn chặn; PUBLIC cần URL manifest
+an toàn; locked/VIP/paywall/login/DRM/CAPTCHA/unsafe redirect/401/403/429 dừng.
+
+Downloader Kuaikan mới: TLS/DNS pin/allowlist, redirect validation, tuần tự,
+200 ảnh/chương,32MB/ảnh,512MB/chương,2GB cache, deadline/retry hữu hạn, MIME/magic/
+Pillow verify+decode, hash/atomic receipt, resume/cancel. Không sửa signature,
+cookie/Referer/UA/proxy. Không tự tải khi nhập/phân tích URL; chọn chương và
+bấm Tải và dịch mới chạy, worker kiểm tra policy lại. GUI tái dùng progress/
+QThread, cache manifest ghi provenance user policy. Không đổi core OCR/MT.
+
+**LIVE_IMAGE_DOWNLOAD_PASS:2 ảnh đầu chương281106,2 GET CDN200,689114 byte,
+JPEG1280×1000**, bitmap/cache/hash PASS, không401/403/429. Cache hit và GUI QA
+không tải lại ảnh. **KUAIKAN_URL_TO_TRANSLATION_E2E_PASS (2-image sample)**:
+2 vùng OCR/2 bản dịch thật,2 output, nguồn không đổi. GUI button/QThread/
+LocalComicJob sample PASS, pause/resume và responsive. Chưa thử toàn116 ảnh.
+
+**Pytest/unittest207 PASS,10 SKIPPED,0 FAIL**; thêm27 ca. Captured DOM, local
+single/folder/Offline E2E/Windows Qt smoke/cache/output/native guard còn PASS.
+2 lỗi diagnostic QA được giữ bằng chứng và kiểm tra độc lập lại; app/core không
+sửa để né lỗi QA. Không cài package/model, không đổi .venv/BAT/spec/DOM/settings
+hoặc4 EXE. 93 file bảo vệ giữ hash,5 model integrity PASS. Không build EXE.
+
+Evidence `logs/kuaikan-default-allow-20261107T101940Z/`:
+`live-sample-audit.json`, `gui-sample.json`, `pytest-final.xml`, `unittest-final/`,
+`preservation.json`. Output mẫu dưới `output/kuaikan-user-policy-validation/`.
+Chi tiết source/config/giới hạn/test và lịch sử Stage A giữ nguyên tại
+`docs/KUAIKAN_IMAGE_DOWNLOAD_VALIDATION.md`; guide cập nhật policy mới.
+Chạy `run_source.bat` để dùng source mới; EXE cũ chưa chứa thay đổi. Bước tiếp:
+nghiệm thu lựa chọn lớn hơn/chương thực tế, giữ mọi chặn kỹ thuật và evidence
+UNKNOWN tách riêng. Không gọi user default allow là website cấp phép.
+
+## Mới nhất — Kuaikan download policy gate, 07/11/2026 từ 09:58 UTC
+
+Giai đoạn A hoàn thành: đọc nguồn chính thức, đối chiếu đúng serviceData và
+policyData trong `/webs/agreement`, không dựa riêng search snippet/upload terms.
+Chưa có grant đủ phạm vi cho tải tự động CDN/cache/OCR/MT/export qua app ngoài.
+**DOWNLOAD_UNKNOWN, case C; Stage B BLOCKED_BY_POLICY** do thiếu bằng chứng,
+không phải FAIL kỹ thuật hoặc kết luận mọi cách đọc cá nhân bị cấm.
+
+Live metadata/parser vẫn PASS: topic26/23main, chương281106 PUBLIC/unlocked,
+116 URL ảnh manifest có sign/t, đúng tn1.kkmh.com. **0 HEAD/GET ảnh,0 ảnh/0 byte**;
+TTL/CDN connectivity/bitmap/cache ảnh web NOT_TESTED. Không triển khai downloader
+hoặc Kuaikan E2E, không sửa production/pipeline/native guard, không build EXE.
+
+Thêm `tests/test_kuaikan_download_policy.py`8 ca. **Pytest/unittest180 PASS,
+10 SKIPPED,0 FAIL**. Captured DOM/SSR/HTTP fixture, Windows Qt local single/folder,
+OCR/MT/cache/output, GUI smoke và LOCAL_OFFLINE_E2E_PASS. Không dùng mocked
+permission/HTTP hoặc local E2E thay cho live download. 102 file trước nhiệm vụ
+giữ hash,5 model integrity PASS; config/DOM/BAT/spec/4 EXE bảo toàn.
+
+Báo cáo: `docs/KUAIKAN_IMAGE_DOWNLOAD_VALIDATION.md`; evidence
+`logs/kuaikan-download-policy-20261107T095823Z/`. Cập nhật guide về gate và phạm
+vi giấy phép. Bước tiếp: nguồn/chấp thuận đủ quyền tải và xử lý dự kiến; giữ
+metadata/discovery và nhập ảnh đã lưu hợp lệ trong lúc chờ. Không cần DOM mới.
+
+## Mới nhất — Kuaikan LIVE_HTTP_PASS, 07/11/2026 từ 09:33 UTC
+
+Phiên mới có mạng, không network-disabled flag/proxy. Đúng transport
+`fetch_public_html` trả **HTTP200 HTML UTF-8 cho cả topic6677 và chapter281106**.
+Đã xác minh qua MainWindow tab URL/QThread thật, không mock, không preload DOM:
+topic **26 mục / 23 main / 3 phụ**, chương15 ID281106; reader **116 URL ảnh từ
+public manifest trong response thật**, chỉ2 URL trong thẻ img SSR. Thứ tự ID
+chương và116 URL path khớp captured DOM. GUI responsive, không tự chọn/crawl.
+
+Root cause: initial HTTP HTML chưa có `.title-item` và chỉ render2 img-box,
+trong khi Nuxt state công khai có đủ chapter records/manifest. Chỉ sửa
+`sources/kuaikan_dom.py` để dùng state được kiểm chứng theo topic/chapter ID,
+title/order/domain khi DOM chưa đủ; giữ DOM path cũ và warnings/provenance rõ.
+`sources/kuaikan.py` cập nhật mô tả/support status. Transport/GUI/OCR/MT/native
+guard/models/dependencies không đổi. Không thêm endpoint/browser automation.
+
+**Pytest/unittest172 PASS,10 SKIPPED,0 FAIL**; thêm10 ca SSR. Captured DOM và14
+mocked HTTP cũ vẫn PASS; dedicated live GUI PASS độc lập. Local single/folder,
+OCR/Argos thật, cache/output, GUI smoke Windows Qt và E2E Offline PASS.
+99 file bảo vệ giữ hash ngoài2 source sửa có chủ đích,5 model integrity PASS;
+config, DOM gốc, .venv/BAT/spec và4 EXE cũ bảo toàn. Không tải ảnh hoặc build.
+
+Evidence: `logs/kuaikan-http-20261107T093330Z/gui-live-verified.json`, pytest/
+unittest/preservation cùng thư mục. Initial parser FAIL và lỗi script QA đầu
+giữ nguyên bằng chứng, giải thích tại `docs/KUAIKAN_CHAPTER_281106_ANALYSIS.md`.
+Guide cập nhật live state fallback và registry. Fixture mới là public HTTP state
+đã lọc + DOM skeleton viết tay, không gọi là raw HTTP hoặc live test.
+
+**DOWNLOAD_UNKNOWN / downloader NOT IMPLEMENTED**; URL → ảnh → dịch chưa hoàn
+thành. Source hiện phân tích URL được; không cần DOM thủ công mỗi chương, không
+cần browser automation cho hai mẫu. Bước tiếp: xác minh điều kiện tải trước khi
+triển khai downloader; dùng ảnh đã lưu hợp lệ trong lúc chờ. EXE cũ chưa chứa
+sửa parser SSR, không build trong nhiệm vụ này. Mục ENVIRONMENT_BLOCKED dưới là
+lịch sử phiên cũ.
+
+## Mới nhất — LIVE HTTP runtime Kuaikan, 07/11/2026 09:05 UTC
+
+**ENVIRONMENT_BLOCKED.** Đã gọi transport thật `fetch_public_html` cho đúng hai
+URL topic6677 và chapter281106. Phiên Windows/Python `.venv` 3.10.9 x64 đang có
+`CODEX_SANDBOX_NETWORK_DISABLED=1` và HTTP/HTTPS/ALL proxy loopback port9;
+transport từ chối trước DNS/TCP/HTTP send (đều0). Không nhận response, status/type/
+charset/Nuxt/parser trên live response đều chưa xác minh. Không kết luận website
+chặn, không bỏ proxy/guard, không sửa parser theo lỗi mạng.
+
+Không sửa production source/GUI/core/providers/native guard/transport; chỉ thêm
+`tests/test_kuaikan_http_runtime.py`: **14 ca MOCKED_HTTP_PASS** (11 transport/
+adapter và3 GUI/QThread thật với simulated responses). Kiểm tra200/redirect/
+timeout/DNS/proxy/401/403/429/nonHTML/missing state, reuse page, direct reader,
+metadata giữ khi lỗi chương, GUI responsive. Không gọi mock là LIVE_HTTP_PASS.
+
+**Pytest/unittest 162 PASS, 10 SKIPPED, 0 FAIL**, captured DOM vẫn26/23/3 và116
+URL. GUI Windows Qt ảnh đơn/folder/OCR/MT thật + cache/output/pause-resume,
+E2E Offline và GUI smoke PASS. Không tải ảnh, DOWNLOAD_UNKNOWN, downloader chưa
+triển khai. Không build hoặc kiểm thử EXE mới; 4 EXE cũ bảo toàn hash. 100 file
+chụp hash giữ nguyên và5 model integrity PASS, config/DOM/ảnh nguồn không đổi.
+
+Evidence: `logs/kuaikan-http-20261107T090510Z/` (environment, runtime-probe,
+pytest, unittest, preservation). Báo cáo/đường dẫn GUI/E2E và việc còn lại tại
+`docs/KUAIKAN_CHAPTER_281106_ANALYSIS.md` (mục LIVE HTTP RUNTIME VALIDATION);
+guide có mục LIVE HTTP ACQUISITION VALIDATION. Bước tiếp là phiên có mạng hợp lệ
+để kiểm chứng response bằng cùng adapter; không cần gửi DOM mỗi lần đọc chương.
+
+## Mới nhất — parser Kuaikan kiểm chứng bằng DOM người dùng, 07/11/2026
+
+Hai file thật dưới `output/kuaikan-capture/` đọc UTF-8 được, giữ nguyên SHA.
+Parser topic hiện ánh xạ **26 mục / 23 main / 3 supplementary** từ DOM title
+và ID thật trong public Nuxt state; **0 href literal nhưng 26 canonical URL**
+theo route reader đã xác minh. Chương 15 khớp ID281106 và URL từ dữ liệu nhúng.
+Reader có **122 img nội dung / 116 URL duy nhất / 6 bản trùng**, khớp 116 mục
+manifest snapshot; image_list_complete vẫn None, chưa kiểm tra bitmap hoặc mạng.
+
+Đã thêm literal/alias reader không JS execution, sửa parser scope/lazy/signed
+URL discovery, thêm provenance/thống kê và redaction report. PUBLIC chỉ là đọc
+theo snapshot; DownloadDecision vẫn UNKNOWN, downloader Kuaikan chưa có.
+Không đổi GUI, core OCR/MT, native guard, transport HTTP, service/cache,
+dependencies, model, .venv, BAT/spec hoặc EXE. Không build trong nhiệm vụ này.
+
+**Pytest/unittest: 148 PASS, 10 SKIPPED, 0 FAIL** (thêm 14 ca, trong đó 2 ca
+chạy toàn bộ DOM gốc). Hai CLI rendered_dom PASS, zero network/download.
+GUI Windows Qt ba tab với ảnh đơn/folder/OCR/MT thật, E2E Offline và GUI smoke
+PASS; config/ảnh nguồn không đổi. Physical desktop nghiệm thu thủ công chưa làm.
+**Live HTTP, image download và EXE mới: NOT TESTED trong nhiệm vụ DOM**, không
+coi parser PASS là daily URL → ảnh → dịch PASS hoặc tái kết luận mạng BLOCKED.
+
+Evidence/tests/bảo toàn: `logs/captured-dom-20261107/`; CLI báo cáo tại
+`output/kuaikan-html-analysis/20261107T082007Z-14ec3b/` (topic) và
+`20261107T082007Z-f9cb99/` (reader). Chi tiết/đường dẫn GUI/E2E trong
+`docs/KUAIKAN_CHAPTER_281106_ANALYSIS.md`. Hai DOM nguyên bản không commit;
+fixture capture đã lọc riêng tư và thay query chữ ký bằng dummy, có provenance.
+
+`docs/WEBSITE_ADAPTER_AI_GUIDE.md` cập nhật ứng dụng cá nhân, USER-PROVIDED DOM
+WORKFLOW, prompt thêm domain, API và checklist nghiên cứu/runtime riêng.
+Bước tiếp: kiểm chứng HTTP acquisition khi được yêu cầu/phép; chỉ thêm tải khi
+điều kiện tải được xác minh. Không cần thêm DOM cho parser snapshot hiện tại.
+Các trạng thái chưa nhận DOM/fixture-only ở mục cũ phía dưới là lịch sử.
+
+## Mới nhất — adapter URL chương Kuaikan, 07/11/2026
+
+Đã bổ sung router `/webs/comic-next/<id>`, parser HTML/DOM topic/reader/ảnh tách khỏi
+download, partial lists/warnings, parent comic ID nullable và IMAGE_LIST_READY.
+GUI chính/pipeline không viết lại; worker phân tích URL chương độc lập topic list,
+thêm thao tác nhỏ phân tích ảnh chương đã chọn. Chưa tải ảnh hoặc bật downloader.
+
+**Chưa nghiệm thu live Kuaikan.** Trang chương không truy cập được qua công cụ web;
+runtime bị sandbox/proxy guard chặn mạng. Chưa xác minh HTTP status/DOM/prev-next/
+link 15 từ topic/URL ảnh thật. Đã yêu cầu HTML/DOM đã lưu; fixture hiện tại viết tay,
+không thay bằng chứng website. Chi tiết `docs/KUAIKAN_CHAPTER_281106_ANALYSIS.md`.
+Regression source: **pytest/unittest 134 PASS, 10 SKIPPED (144 ca)**; GUI Windows
+ảnh đơn/folder/OCR/MT thật, E2E Offline và GUI smoke PASS. 18 ca parser/worker mới
+chỉ dùng fixture; 3 ca live Kuaikan SKIPPED. Chưa build mới khi chưa có DOM thật.
+EXE GUI tab đã nghiệm thu ở các mục dưới được giữ nguyên, chưa chứa sửa adapter này.
+
+## Mới nhất — GUI ba tab và luồng URL độc lập, 07/11/2026
+
+MainWindow nhúng **Ảnh đơn / Thư mục ảnh / Link truyện online**, có cuộn, không mở
+dialog nguồn lớn. ComicSourcesPanel dùng lại worker và pipeline; folder cũ giữ nguyên.
+Phân tích URL không phụ thuộc cờ quyền tải toàn website. Metadata giữ khi lỗi chương;
+chương UNKNOWN chọn được; tải xét DownloadDecision từng chương và worker kiểm tra lại.
+Lỗi parser/network/access/usage_limit/download_policy/kỹ thuật tách riêng.
+
+Kuaikan: metadata browser quan sát được, raw chapter/parser/image list chưa xác minh;
+policy UNKNOWN, downloader chưa triển khai. Không bịa chương hoặc endpoint. Chưa có
+live URL → ảnh PASS. Ảnh người dùng cung cấp vẫn dịch Offline bình thường.
+
+Pytest/unittest **116 PASS, 7 SKIPPED (123 ca)**; tab GUI Windows với ảnh truyện/
+OCR/MT thật PASS, folder workflow cũ/E2E/GUI smoke PASS. Build mới PASS qua build.bat;
+chính EXE đã PASS tab workflow, GUI Windows smoke và E2E Offline ảnh truyện thật.
+Binary `dist/ImageTranslatorVN-20261107T045417969128Z/ImageTranslatorVN-20261107T045417969128Z.exe`,
+SHA-256 `99baadc76bc0836781ac7db43674f1a4e7b93be3e5344d6d47c0b5357bbe517c`.
+Không ghi đè bản cũ; không đổi dependencies/model/core pipeline/native guard/BAT/spec.
+QA đã được tách khỏi lưu config thật; xem lỗi đã khắc phục và evidence đầy đủ tại
+`docs/GUI_URL_FLOW_REPORT.md`. Các trạng thái lịch sử phía dưới không phải trạng thái mới nhất.
+
+## Mới nhất — nguồn ảnh/chương/URL, 07/11/2026
+
+**Phần ảnh cục bộ đã tích hợp; Kuaikan URL đầy đủ vẫn BLOCKED.** Không tạo lại
+dự án/.venv, không cài/nâng package, không tải/đổi model, không sửa core pipeline,
+provider, native import guard, BAT/spec hoặc EXE cũ.
+
+- `sources/`: contract/registry/Kuaikan metadata thử nghiệm, HTTPS/DNS validation,
+  ImageCollection, cache manifest kiểm tra ảnh/hash/quota, LocalComicJob dùng
+  ProcessingManager gốc và publisher xuất theo chương không ghi đè.
+- `ui/comic_sources.py`: ảnh đơn/thư mục chương/link; QThread, chọn chương chủ động,
+  pause/resume/cancel/retry, output riêng. MainWindow chỉ thêm nút mở dialog.
+- `scripts/qa_common.py` đưa `sources/*.py` vào source fingerprint để gate build
+  không tái dùng bằng chứng của adapter cũ. Không nới các điều kiện build khác.
+- Mở source mới bằng **`run_source.bat`**, rồi **Ảnh đơn / chương ảnh / link truyện
+  online**. BAT cũ vẫn trỏ luồng cũ; EXE cũ chưa có UI nguồn mới.
+- Kuaikan: quan sát metadata topic 6677 và 15425 qua công cụ web; topic 3791 chưa
+  đọc được. Chưa có raw HTML/chapter IDs/image list được xác minh, chưa có quyền
+  tải tự động. Không triển khai downloader ảnh HTTP. Runtime metadata báo mạng bị
+  sandbox/proxy giới hạn; không bỏ proxy hoặc vượt kiểm soát truy cập.
+- Thay thế hợp lệ đã chạy: nhập ảnh người dùng cung cấp, 2 chương/2 ảnh truyện thật,
+  3 vùng OCR + 3 bản dịch, xuất PNG, nguồn nguyên vẹn; GUI Qt Windows và offscreen
+  đã có evidence. Không coi ảnh này có provenance Kuaikan hoặc chất lượng dịch đạt.
+- Audit `.venv`: 16/16 imports, 18/18 pins, Ready True; 5 model còn hợp lệ.
+  **Pytest/unittest cuối: 106 PASS, 7 SKIPPED (113 ca)**. GUI smoke, workflow thư
+  mục cũ và E2E Offline chuẩn PASS; GUI chương ảnh Windows/offscreen PASS.
+  Test/đường dẫn evidence cuối xem `docs/ONLINE_COMIC_TEST_REPORT.md`.
+- EXE mới chưa build/NOT TESTED: luồng URL chưa đủ điều kiện nghiệm thu. Không ghi
+  đè bản EXE cũ. Các phần lịch sử bên dưới không thay thế trạng thái mới này.
+
+Tài liệu: `docs/KUAIKANMANHUA_ANALYSIS_REPORT.md`,
+`docs/ONLINE_COMIC_TEST_REPORT.md`, **`docs/WEBSITE_ADAPTER_AI_GUIDE.md`**.
+Bước tiếp: xác minh cấu trúc HTML/chương thật trong môi trường mạng được phép;
+chỉ thêm downloader khi quyền tải và các giới hạn đã được xác minh. Tiếp tục cải
+thiện chất lượng MT/mask theo báo cáo cũ; không thay model trong tác vụ URL này.
+
 ## Quản lý Git — 06/11/2026
 
 Đã `git init -b main`; chưa có commit và chưa thêm được remote vì sandbox chặn ghi `.git/config`/index. Remote dự kiến `https://github.com/thangtaide/IMAGE-TRANSLATOR-VN.git`. `.gitignore` loại model, môi trường Python, EXE/build, backup, cache, log, output/evidence, ảnh ImgTest và cấu hình riêng. Giữ mã nguồn/test/script, cấu hình mẫu và các báo cáo Markdown. Không xóa dữ liệu cục bộ. Truy cập GitHub cũng lỗi proxy `127.0.0.1:9`. Yêu cầu nâng quyền ghi Git metadata đã bị chính sách `sandbox_approval=false` từ chối. Cần môi trường cho phép ghi `.git` và HTTPS tới GitHub để commit/push; không đổi quyền ACL hoặc bỏ proxy để vượt giới hạn. Xem `GIT_PUBLISH_REPORT.md`.

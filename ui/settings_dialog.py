@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QDoubleSpinBox, QVBoxLayout)
 
 from core.types import Options
@@ -61,6 +61,9 @@ class SettingsDialog(QDialog):
         self.endpoint = QLineEdit(options.endpoint)
         form.addRow('LibreTranslate miễn phí / tự host', self.endpoint)
         outer.addLayout(form)
+        self.diagnostic_text = QCheckBox('Lưu văn bản OCR/bản dịch bị lỗi trong diagnostic cục bộ (giới hạn độ dài)')
+        self.diagnostic_text.setChecked(options.diagnostic_text)
+        outer.addWidget(self.diagnostic_text)
         note = QLabel('MyMemory miễn phí có hạn mức khoảng 5.000 ký tự/ngày/IP.\n'
                       'Chỉ dùng endpoint LibreTranslate bạn có quyền sử dụng miễn phí. Không nhập API key.\n'
                       'Thuật ngữ/tên riêng: mỗi dòng là chữ gốc = tiếng Việt. Marker phải được provider giữ nguyên.')
@@ -99,6 +102,7 @@ class SettingsDialog(QDialog):
             return
         for name, widget in self.fields.items():
             setattr(self.options, name, widget.value())
+        self.options.diagnostic_text = self.diagnostic_text.isChecked()
         for name, combo in self.combos.items():
             setattr(self.options, name, combo.currentData())
         self.options.font = self.font.text().strip()

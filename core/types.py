@@ -48,6 +48,7 @@ class Options:
     endpoint: str = "http://127.0.0.1:5000"
     glossary: dict[str, str] = field(default_factory=dict)
     reading_direction: str = "ltr"
+    diagnostic_text: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

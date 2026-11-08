@@ -39,7 +39,7 @@ def main() -> int:
     settings=CONFIG/'settings.json';settings_before=settings.read_bytes() if settings.exists() else None
     app=QApplication.instance() or QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    window=MainWindow(cache_path=folder/'state.sqlite3')
+    window=MainWindow(cache_path=folder/'state.sqlite3',persist_settings=False)
     window.source.setText(str(source));window.output.setText(str(output))
     window.language.setCurrentIndex(window.language.findData('zh'))
     window.mode.setCurrentText('Offline');window.offline_provider.setCurrentText('Argos')

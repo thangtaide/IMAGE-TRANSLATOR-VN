@@ -22,10 +22,28 @@ htmlcov/
 /dist/
 /build/
 /wheelhouse/
+/tmp/
+/temp/
+/downloads/
 
 # AI weights are downloaded/installed separately; models/README.md is source documentation
 /models/ocr/**
 /models/translation/**
+# Keep model source, documentation and distributable manifests visible.
+!/models/ocr/**/
+!/models/translation/**/
+!/models/ocr/**/*.py
+!/models/translation/**/*.py
+!/models/ocr/README.md
+!/models/translation/README.md
+!/models/ocr/**/*manifest*.json
+!/models/translation/**/*manifest*.json
+!/models/ocr/**/*checksum*.json
+!/models/translation/**/*checksum*.json
+!/models/ocr/**/*.sha256
+!/models/translation/**/*.sha256
+!/models/ocr/**/*.example.json
+!/models/translation/**/*.example.json
 
 # Machine settings and private tool/account configuration
 /config/*
@@ -45,11 +63,8 @@ htmlcov/
 
 # Runtime artifacts and temporary files
 *.log
-*.sqlite
-*.sqlite3
-*.sqlite3-*
-*.db
-*.db-*
+# Runtime databases live under /cache, /output, /logs or /config above.
+# Do not hide SQLite fixtures or databases at unexpected source paths globally.
 *.tmp
 *.part
 *.bak
