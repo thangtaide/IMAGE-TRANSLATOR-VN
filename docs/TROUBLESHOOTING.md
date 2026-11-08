@@ -1,5 +1,29 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3B — AGY
+
+- AGY_NOT_FOUND: app chưa tìm được executable đã cài; nhập đường dẫn.exe trong
+  Cài đặt. Không tự cài/đăng nhập lại. Phiên Codex cũ có thể thiếu PATH mới nhưng
+  binary vẫn ở LocalAppData/agy/bin; không cần sửa PATH hệ thống.
+- AGY_CAPABILITY: CLI thiếu headless/schema/settings hoặc không xác minh version;
+  dừng, không tự update hoặc chuyển sang Gemini API.
+- AGY_AUTOMATIC_EXTENSIONS: hooks/MCP tự động không rỗng/không xác minh được;
+  không sửa user config hoặc cấp quyền rộng để chạy cho bằng được.
+- INVALID_RESPONSE: JSON/envelope/schema/ID/tool-use không qua kiểm tra. Không
+  suy là lỗi dịch/người dùng không có Pro. Live attempt đầu bị chặn ở đây, lượt
+  bổ sung đã PASS; nguyên nhân lỗi đầu chưa rõ vì thiếu raw protocol/target lúc
+  đó. Metadata an toàn giúp điều tra nếu tái xuất hiện. Không tự retry batch.
+- TIMEOUT/CANCELLED: chỉ dừng process do app khởi tạo; không logout/clear auth.
+- QUOTA_EXCEEDED/RATE_LIMITED/AUTH_REQUIRED/REQUEST_LIMIT: dừng dispatch, × chỉ
+  đóng notice; không chuyểnmodel/provider/billing. Không biết reset thì báo chưa rõ.
+- NUMERIC_MISMATCH: guard cũ vẫn áp dụng; không nới số/ngày hoặc dùng date handler
+  QA để ép model thành PASS. Rejected target không ghi cache hợp lệ.
+
+Diagnostic AGY chỉ giữ shape/count/code, không ghi stderr/OAuth/token thô. Nếu
+cần chạy thêm QA thật phải nêu provider/phạm vi/request budget và duyệt lại;
+phạm vi1batch ban đầu và1lượt bổ sung đã được dùng. Giữ nguyên artifact lỗi và
+thành công, không xóa cache user hoặc gán cache replay thành generation live mới.
+
 ## Stage3A — lỗi Online Free
 
 - QUOTA_EXCEEDED: provider báo quota đã hết, dừng dispatch. Không tự nâng gói.

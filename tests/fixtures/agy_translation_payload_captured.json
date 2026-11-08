@@ -1,0 +1,29 @@
+{
+  "fixture_kind": "CAPTURED_REAL_TRANSLATION_PAYLOAD; protocol envelope assembled by test, not a byte-exact CLI transcript",
+  "source_evidence": "output/agy-validation/20261108T031617089759Z/protocol.json",
+  "cli_version": "1.5.3",
+  "model": "gemini-3.8-flash-medium",
+  "date": "2026-11-08",
+  "source_texts": [
+    "活动时间",
+    "活动时间和活动内容",
+    "第13话"
+  ],
+  "payload": {
+    "translations": [
+      {
+        "id": "r0000",
+        "text": "Thời gian hoạt động"
+      },
+      {
+        "id": "r0001",
+        "text": "Thời gian hoạt động và nội dung hoạt động"
+      },
+      {
+        "id": "r0002",
+        "text": "Chương 13"
+      }
+    ]
+  },
+  "privacy": "Only three approved generic source/target segments. No credentials, account IDs, tools or model reasoning."
+}

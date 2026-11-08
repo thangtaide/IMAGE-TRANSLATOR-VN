@@ -23,6 +23,7 @@ from core.diagnostics import (DiagnosticLog, VALIDATOR_VERSION, safe_text,
     TRANSLATED_SUCCESS, FALLBACK_ORIGINAL, FAILED_NO_OUTPUT)
 from providers.offline import create_offline_provider
 from providers.online import LibreTranslateProvider, MyMemoryProvider, ProviderError, ProviderSuspended
+from providers.agy import AGYProvider, MODE as AGY_MODE
 
 LOGGER = logging.getLogger(__name__)
 NUMBER_PATTERN = r'[+\-−－＋]?\d+(?:[.,:/%+−-]\d+)*%?'
@@ -83,6 +84,7 @@ class TranslationService:
         self.options, self.cache, self.control = options, cache, control
         self.offline = offline
         self.online = online
+        self.agy = None
         self.last_attempt: dict = {}
 
     def _offline(self):
@@ -96,8 +98,17 @@ class TranslationService:
                            else LibreTranslateProvider(self.options.endpoint, checkpoint=self.control.checkpoint))
         return self.online
 
+    def _agy(self):
+        if self.agy is None:
+            self.agy = AGYProvider(executable=self.options.agy_executable, model=self.options.agy_model,
+                timeout=self.options.agy_timeout, max_requests=self.options.agy_max_requests,
+                checkpoint=self.control.checkpoint, cancelled=lambda: self.control.cancelled)
+        return self.agy
+
     def identity(self) -> str:
         parts = ['literal-numbers-v1', self.options.mode, self.options.allow_online_fallback, self.options.glossary]
+        if self.options.mode == AGY_MODE:
+            return digest(parts + [self._agy().identity])
         if self.options.mode not in ('Online', 'Online Free'):
             parts.append(self._offline().identity)
         if self.options.mode in ('Online', 'Online Free') or (self.options.mode == 'Auto Fallback' and self.options.allow_online_fallback):
@@ -121,10 +132,11 @@ class TranslationService:
             chunks.append(current)
         return chunks
 
-    def _translate_using(self, provider, text: str, language: str, context: str) -> str:
+    def _translate_using(self, provider, text: str, language: str, context: str,
+                         deferred: list | None = None, raw_target: str | None = None) -> str | None:
         provider_name = getattr(provider, 'engine_name', None)
         self.last_attempt = {'provider': provider_name if isinstance(provider_name, str) else type(provider).__name__,
-                             'model_identity': provider.identity, 'mode': 'Online' if provider.online else 'Offline',
+                             'model_identity': provider.identity, 'mode': AGY_MODE if self.options.mode == AGY_MODE else 'Online' if provider.online else 'Offline',
                              'ocr_source_text': text, 'raw_translated_target': None}
         key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, 'glossary-v3-literal-numbers'])
         cached = self.cache.get('translation', key)
@@ -149,8 +161,13 @@ class TranslationService:
         expected_numbers = re.findall(number_pattern, protected)
         self.last_attempt['source_numeric_tokens'] = expected_numbers
         self.control.checkpoint()
+        if deferred is not None:
+            deferred.append((protected, language))
+            return None
         try:
-            if provider.online and isinstance(provider, MyMemoryProvider):
+            if raw_target is not None:
+                translated = raw_target
+            elif provider.online and isinstance(provider, MyMemoryProvider):
                 translated = ' '.join(provider.translate(chunk, language) for chunk in self._chunks(protected))
             else:
                 translated = provider.translate(protected, language)
@@ -175,6 +192,8 @@ class TranslationService:
 
     def translate(self, text: str, language: str, context: str) -> str:
         self.last_attempt = {}
+        if self.options.mode == AGY_MODE:
+            return self._translate_using(self._agy(), text, language, context)
         if self.options.mode in ('Online', 'Online Free'):
             return self._translate_using(self._online(), text, language, context)
         try:
@@ -185,9 +204,39 @@ class TranslationService:
             self.control.checkpoint()
             return self._translate_using(self._online(), text, language, context)
 
+    def translate_regions(self, regions: list[OCRResult], context: str) -> list[str]:
+        """Batch only cache misses; retain the exact existing per-region guard/cache."""
+        provider = self._agy()
+        results, pending = [], []
+        for region in regions:
+            results.append(self._translate_using(provider, region.text, region.language, context, deferred=pending))
+        slots = [i for i, value in enumerate(results) if value is None]
+        groups = {}
+        for index, item in zip(slots, pending):
+            groups.setdefault(item[1], []).append((index, item[0]))
+        for language, group in groups.items():
+            try:
+                first = group[0][0]
+                # Establish diagnostic context before the one batch request.
+                self._translate_using(provider, regions[first].text, language, context, deferred=[])
+                targets = provider.translate_batch([text for _, text in group], language)
+                for (index, _), target in zip(group, targets):
+                    try:
+                        results[index] = self._translate_using(provider, regions[index].text, language, context, raw_target=target)
+                    except Exception as exc:
+                        exc.region_index = index
+                        raise
+            except Exception as exc:
+                if not hasattr(exc, 'region_index'):
+                    exc.region_index = group[0][0]
+                raise
+        return results
+
     def close(self) -> None:
         if self.online is not None and hasattr(self.online, 'close'):
             self.online.close()
+        if self.agy is not None:
+            self.agy.close()
 
 
 class ProcessingManager:
@@ -266,7 +315,7 @@ class ProcessingManager:
         for reserved in ('models', 'config', 'cache', 'logs', 'ui', 'core', 'providers', 'scripts', 'tests', '.venv', 'assets'):
             if self.output.is_relative_to((ROOT / reserved).resolve()):
                 raise ValueError('Thư mục xuất trùng khu vực mã nguồn/model/cache của ứng dụng')
-        if self.options.mode not in ('Online', 'Online Free', 'Offline', 'Auto Fallback'):
+        if self.options.mode not in ('Online', 'Online Free', 'Offline', 'Auto Fallback', AGY_MODE):
             raise ValueError('Chế độ dịch không hợp lệ')
         if self.options.language not in ('zh', 'zt', 'ko', 'en', 'auto'):
             raise ValueError('Ngôn ngữ OCR không hợp lệ')
@@ -331,6 +380,10 @@ class ProcessingManager:
             relevant.pop('skip_success', None)
             # Operational logging must not invalidate existing job/translation keys.
             relevant.pop('diagnostic_text', None)
+            if self.options.mode != AGY_MODE:
+                # Adding optional AGY settings must not invalidate old jobs.
+                for key in ('agy_executable', 'agy_model', 'agy_timeout', 'agy_max_requests'):
+                    relevant.pop(key, None)
             font_path = Path(self.options.font) if self.options.font else default_font()
             relevant['font_sha256'] = file_digest(font_path) if font_path.is_file() else 'missing-font'
             if self.options.erase_mode == 'custom' and self.options.mask_path:
@@ -402,7 +455,15 @@ class ProcessingManager:
                     context = digest([r.text for r in regions])
                     translations = []
                     stage = 'TRANSLATION'
-                    for n, region in enumerate(regions):
+                    if self.options.mode == AGY_MODE and regions:
+                        region_index, current_region = 0, regions[0]
+                        try:
+                            translations = self.service.translate_regions(regions, context)
+                        except Exception as exc:
+                            region_index = getattr(exc, 'region_index', 0)
+                            current_region = regions[region_index]
+                            raise
+                    for n, region in enumerate([] if self.options.mode == AGY_MODE else regions):
                         region_index, current_region = n, region
                         self.control.checkpoint()
                         translations.append(self.service.translate(region.text, region.language, context))

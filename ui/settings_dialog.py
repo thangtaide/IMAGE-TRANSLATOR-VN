@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QDoubleSpinBox, QVBoxLayout)
+    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QDoubleSpinBox, QVBoxLayout,
+    QScrollArea, QWidget)
 
 from core.types import Options
 
@@ -60,7 +61,25 @@ class SettingsDialog(QDialog):
         form.addRow('Mask: trắng = vùng xóa', mask_row)
         self.endpoint = QLineEdit(options.endpoint)
         form.addRow('LibreTranslate miễn phí / tự host', self.endpoint)
-        outer.addLayout(form)
+        self.agy_executable = QLineEdit(options.agy_executable)
+        self.agy_executable.setPlaceholderText('Trống: tìm AGY đã cài; không thay PATH hệ thống')
+        form.addRow('AGY executable (.exe)', self.agy_executable)
+        self.agy_model = QLineEdit(options.agy_model)
+        form.addRow('AGY Gemini model slug', self.agy_model)
+        for title, name, low, high in [('Timeout AGY (giây)', 'agy_timeout', 10, 300),
+                                      ('Lượt AGY tối đa/job', 'agy_max_requests', 1, 128)]:
+            widget = QSpinBox()
+            widget.setRange(low, high)
+            widget.setValue(getattr(options, name))
+            form.addRow(title, widget)
+            self.fields[name] = widget
+        form_widget = QWidget()
+        form_widget.setLayout(form)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(form_widget)
+        scroll.setMinimumHeight(260)
+        outer.addWidget(scroll, 1)
         self.diagnostic_text = QCheckBox('Lưu văn bản OCR/bản dịch bị lỗi trong diagnostic cục bộ (giới hạn độ dài)')
         self.diagnostic_text.setChecked(options.diagnostic_text)
         outer.addWidget(self.diagnostic_text)
@@ -71,6 +90,7 @@ class SettingsDialog(QDialog):
         note.setWordWrap(True)
         outer.addWidget(note)
         self.glossary = QPlainTextEdit('\n'.join(f'{k} = {v}' for k, v in options.glossary.items()))
+        self.glossary.setMaximumHeight(120)
         outer.addWidget(self.glossary)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -98,12 +118,17 @@ class SettingsDialog(QDialog):
                     glossary[key.strip()] = value.strip()
             if self.fields['font_min'].value() > self.fields['font_max'].value():
                 raise ValueError('Cỡ chữ tối thiểu phải ≤ cỡ tối đa')
+            model = self.agy_model.text().strip()
+            if not model.startswith('gemini-') or not model.replace('-', '').replace('.', '').isalnum():
+                raise ValueError('AGY cần model slug Gemini đã có trong agy models')
         except ValueError as exc:
             QMessageBox.warning(self, 'Cài đặt chưa hợp lệ', str(exc))
             return
         for name, widget in self.fields.items():
             setattr(self.options, name, widget.value())
         self.options.diagnostic_text = self.diagnostic_text.isChecked()
+        self.options.agy_executable = self.agy_executable.text().strip()
+        self.options.agy_model = model
         for name, combo in self.combos.items():
             setattr(self.options, name, combo.currentData())
         self.options.font = self.font.text().strip()

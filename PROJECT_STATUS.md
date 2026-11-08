@@ -1,5 +1,29 @@
 # Trạng thái Image Translator VN
 
+## Mới nhất — Stage3B AGY, 08/11/2026
+
+**STAGE_3B_COMPLETED_WITH_WARNINGS**. AGY1.5.3 tìm thấy trong
+LocalAppData/agy/bin dù PATH tiến trình cũ thiếu; version/help/models thật PASS,
+không cần restart/cài/đăng nhập lại. Official headless/stdin JSON/schema/settings
+session-only có sẵn. Đã thêm provider/UI3phương thức, pinGemini3.8FlashMedium,
+denytools/không thêmcredits/APIkey, cache riêng, batchID/numeric guard cũ và
+timeout/cancel/quota/protocol stop. FieldAGY không đổi recipeOffline cũ.
+
+Người dùng duyệt1batch3mẫu development17ký tự quaOCR thật trênfixture tổng hợp;
+CLI attempt1 bị INVALID_RESPONSE,0target chấp nhận,0ảnh dịch,1QA fallback.
+Người dùng duyệt thêm1lượt cùng3mẫu: terminalSUCCESS,3target/numericPASS,ảnhPNG
+1600x1000export thật/0fallback. Không córawprotocol lần1 nên không khẳng định
+rootcause hoặc sửa dứt điểm; metadata an toàn đã thêm, không nới parser/guard.
+Tổng2attempts/17ký tựOCR mỗi lượt/0auto retry, không request3. GUI Windows còn
+render1ảnh từ cache live có lineage,0generation mới. Không đổi AGY globalconfig.
+
+Full pytest/unittest mỗi runner309PASS/10SKIPPED/0FAIL. GUI Windows3phương thức+
+notice× PASS; ảnhđơn/thưmục/OCR+ArgosOffline thật PASS. Data595file giữhash,
+chương274872 vẫn120output/119normal+fallback111/needs_retry=[111],4EXE nguyên.
+Live E2E làfixture tổng hợp,không nghiệmthu truyệnthực hoặc benchmark ngữ nghĩa.
+Không tải/cài/bậtAPI riêng/build hoặcStage3C. Xem
+`docs/STAGE3B_AGY_TRANSLATION_REPORT.md` và evidence logs/stage3b-agy-20261108T023844Z.
+
 ## Mới nhất — Stage3A Online Free, 08/11/2026
 
 **STAGE_3A_COMPLETED_WITH_WARNINGS**. MyMemory API chính thức,ẩn danh5.000ký tự/ngày,

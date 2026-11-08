@@ -49,6 +49,10 @@ class Options:
     glossary: dict[str, str] = field(default_factory=dict)
     reading_direction: str = "ltr"
     diagnostic_text: bool = True
+    agy_executable: str = ''
+    agy_model: str = 'gemini-3.8-flash-medium'
+    agy_timeout: int = 90
+    agy_max_requests: int = 64
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -1,5 +1,15 @@
 # Website Adapter AI Guide — Image Translator VN
 
+## Stage3B — AGY và pipeline nguồn ảnh
+
+Nguồn ảnh/URL vẫn dùng pipeline chung; LocalComicJob chỉ mở AGY khi người dùng
+chọn rõ AI Gemini AGY, không tự fallback hoặc đổi download policy. AGY batch
+regionID/cache riêng rồi qua numeric guard cũ. Quota/protocol pause tái sử dụng
+pending/resume Stage3A; cross-restart Stage3C chưa làm. Chỉ phân tích URL không
+khởi chạy AGY. Live attempt đầu INVALID_RESPONSE, lượt2 OCR→AGY→ảnh QA tổng hợp
+PASS thật; chưa coi AGY URL→ảnh truyện production PASS. GUI cache replay không
+thêm generation. Xem STAGE3B_AGY_TRANSLATION_REPORT.md để phân biệt cấp kiểm thử.
+
 ## Stage 2 — cache recovery và OCR override, 08/11/2026
 
 Không thay adapter, downloader hay API retry để sửa OCR/MT. Pipeline chung

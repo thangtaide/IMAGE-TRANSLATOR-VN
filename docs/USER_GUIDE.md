@@ -1,5 +1,29 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## AI Gemini AGY — trạng thái Stage3B
+
+Lượt đầu lỗi giao thức INVALID_RESPONSE; lượt bổ sung được duyệt đã OCR→AGY→ảnh
+PASS trên fixture tổng hợp3vùng, chưa nghiệmthu wholechapter/truyện phức tạp.
+Không cần restart hoặc đăng nhập lại vì thiếu PATH trong phiên Codex cũ: app tìm
+AGY.exe trong PATH/LocalAppData; Cài đặt cho phép nhập executable đã cài nếu cần.
+
+Khu vực dịch chung3tab có **AI Gemini AGY**. Settings hiện có thêm model slug
+Gemini,timeout vàmaxrequests/job. AGY dùng phiên account sẵn có, không nhập API
+key. Khi bấm Bắt đầu mới gửi OCR theo batchID; không gửi ảnh/DB trong prompt,
+không cấp file/shell/web/MCP, không dùng thêmcredits hoặc tự đổi phương thức.
+CLI tự quản lý auth/conversation/metadata riêng theo thiết lập Google của bạn.
+
+Quota/rate/auth/protocol/timeout sẽ dừng dispatch. × chỉ ẩn thông báo; sau khi
+khắc phục có thể chọn phương thức rồi Tiếp tục pending trong cùng phiên; output
+đã hoàn tất giữ receipt. Không dùng việc đổi provider rồi chạy cảfolder để giả
+resume sau restart; giới hạn Stage3A/3C vẫn còn. Không retry111 từ thao tác QA.
+
+Nếu AGY có hooks/MCP tự động không rỗng, ứng dụng từ chối trước khi gửi prompt,
+không tự sửa cấu hình AGY. Không bật skip-permissions để vượt qua. Xem
+STAGE3B_AGY_TRANSLATION_REPORT.md; hai lượtQA đã được dùng, chạy QA thật thêm
+phải được duyệt riêng. Không tự retry111 hoặc đổi numeric guard khi AGY trả ngày
+theo cách viết khác; xem diagnostic và chọn phương thức tiếp tục nếu cần.
+
 ## Online Free — Stage3A (bản source)
 
 1. Chạy run_source.bat; chọn nguồn ảnh, output và OCR như trước.

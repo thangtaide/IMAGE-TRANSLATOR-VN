@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDia
 from core.paths import CONFIG, ROOT
 from core.storage import TranslationCache, load_options, save_options
 from core.types import Options
+from providers.agy import MODE as AGY_MODE
 from ui.models_dialog import ModelManagerDialog
 from ui.preview import PreviewDialog
 from ui.settings_dialog import SettingsDialog
@@ -110,7 +111,7 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel('Dịch')
         row.addWidget(self.mode_label)
         self.mode = QComboBox()
-        self.mode.addItems(['Offline', 'Online Free', 'Auto Fallback'])
+        self.mode.addItems(['Offline', 'Online Free', AGY_MODE, 'Auto Fallback'])
         self.mode.setCurrentText('Online Free' if self.options.mode == 'Online' else self.options.mode)
         self.mode.setItemData(0, 'Offline — Argos Translate / model cục bộ', Qt.ToolTipRole)
         self.mode.setItemData(1, 'Online Free — MyMemory Machine Translation API', Qt.ToolTipRole)
@@ -258,8 +259,8 @@ class MainWindow(QMainWindow):
         folder = True  # Translation selection is shared by all three input tabs.
         for widget in (self.mode, self.mode_label, self.online_provider, self.online_label, self.allow_fallback):
             widget.setVisible(folder)
-        self.online_provider.setEnabled(folder and mode != 'Offline')
-        self.offline_provider.setEnabled(mode not in ('Online', 'Online Free'))
+        self.online_provider.setEnabled(mode in ('Online', 'Online Free', 'Auto Fallback'))
+        self.offline_provider.setEnabled(mode in ('Offline', 'Auto Fallback'))
         self.allow_fallback.setEnabled(folder and mode == 'Auto Fallback')
         self.privacy.setText('Offline: toàn bộ OCR và dịch chạy cục bộ; thiếu model sẽ báo lỗi, không tải hoặc gửi dữ liệu.' if mode == 'Offline'
                              else 'Online Free: văn bản OCR gửi tới provider đã chọn. MyMemory: 5.000 ký tự/ngày ẩn danh; '
@@ -268,6 +269,10 @@ class MainWindow(QMainWindow):
         if not folder:
             self.privacy.setText('Dịch ảnh/chương bằng Offline với cấu hình OCR, font và xuất ảnh hiện tại. '
                                  'Phân tích URL chỉ đọc thông tin website; không gửi văn bản OCR ra mạng.')
+        if mode == AGY_MODE:
+            self.privacy.setText('AI Gemini — AGY: chỉ gửi các vùng OCR qua phiên AGY đã đăng nhập. '
+                'Model: ' + self.options.agy_model + '. Không dùng API key riêng hoặc tự dùng thêm credits; '
+                'file/shell/web/MCP bị chặn. Chỉ chạy khi bấm Bắt đầu; không tự đổi provider.')
 
     def collect_options(self) -> Options:
         self.options.source = self.source.text().strip()
@@ -481,6 +486,7 @@ class MainWindow(QMainWindow):
         if SettingsDialog(self.options, self).exec():
             if self.persist_settings:
                 save_options(self.options)
+            self.update_mode()
 
     def restore_previous(self) -> None:
         if self.pending_options:

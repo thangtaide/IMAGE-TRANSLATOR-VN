@@ -1,5 +1,16 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3B — AI Gemini AGY trong bản source
+
+Bản source có lựa chọn **AI Gemini AGY** và cài đặt executable/model/giới hạn.
+AGY1.5.3 headless chính thức đã xác minh; lượt QA đầu bị INVALID_RESPONSE, lượt
+bổ sung được duyệt riêng đã **OCR→AGY→ảnh PASS thật trên fixture tổng hợp**.
+Chọn AI Gemini AGY rồi Bắt đầu để dùng phiên account đã có, không API key riêng
+hoặc tự dùng thêm credits. Offline/Online Free vẫn như Stage3A; Offline default.
+Chưa nghiệmthu wholechapter/truyện phức tạp; không có EXE mới.
+Xem [báo cáo Stage3B](docs/STAGE3B_AGY_TRANSLATION_REPORT.md) để tiếp tục đúng
+phạm vi QA được duyệt; không tự cài/đăng nhập lại hay đổi sang Gemini API.
+
 ## Stage3A — Online Free trong bản source
 
 Chạy `run_source.bat`, chọn **Online Free** và **MyMemory** tại cửa sổ chính
