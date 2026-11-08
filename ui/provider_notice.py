@@ -2,6 +2,13 @@
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 
+def gemini_usage_text(event):
+    usage = event.get('usage', {})
+    return ('Gemini API • ' + event['model'] + ' • token input/output/total: ' +
+            '/'.join(str(usage.get(k, '?')) for k in ('promptTokenCount', 'candidatesTokenCount', 'totalTokenCount')) +
+            f" • request cục bộ {event['requests']}/{event['request_limit']}. Quota Google còn lại: chưa xác định; xem AI Studio.")
+
+
 class ProviderNotice(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)

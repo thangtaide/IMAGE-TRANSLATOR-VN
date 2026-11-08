@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from core.storage import digest
 from core.types import CancelledError
 from providers.online import OnlineProviderError, ProviderSuspended
+from providers.gemini_api import MODE as GEMINI_API_MODE
 
 BATCH_VERSION = 'multipage-ids-context-v1'
 
@@ -54,7 +55,10 @@ class MultiPageAGY:
         self.expected, self.values, self.errors = {}, {}, {}
         self.batches = iter(pack_pages(self.pages(), manager.options.agy_batch_chars,
                                       manager.options.agy_batch_regions))
-        self.provider = self.service._agy()
+        self.is_api = manager.options.mode == GEMINI_API_MODE
+        self.provider = self.service._gemini_api() if self.is_api else self.service._agy()
+        if self.is_api:
+            self.provider.emit = manager.emit
         self.identity = digest([self.provider.identity, BATCH_VERSION, manager.options.glossary,
             manager.options.agy_batch_chars, manager.options.agy_batch_regions, manager.options.agy_context])
         journal = manager.journal
@@ -109,13 +113,32 @@ class MultiPageAGY:
                 missing.append(item)
                 protected.append(deferred[0][0])
         if missing:
-            m.emit({'type': 'agy_batch', 'stage': 'AGY batch nhiều trang',
+            # Diagnostic identity only: does not enter recipe/cache/context decisions.
+            batch_meta = dict(batch_id=digest([i.id for i in missing]),
+                page_count=len({i.page for i in missing}), region_count=len(missing),
+                source_characters=sum(len(i.region.text) for i in missing))
+            def attach(exc, observed=None):
+                if self.is_api:
+                    return  # REST responses never enter AGY NDJSON diagnostics.
+                from providers.agy_diagnostics import sanitize, transport
+                info = dict(observed or getattr(exc, 'agy_diagnostic', None) or
+                            transport(getattr(exc, 'code', 'CANCELLED' if isinstance(exc, CancelledError) else 'OTHER_ERROR')))
+                info.update(batch_meta, pending_preserved=True, retry=False, translation_cached=False)
+                exc.agy_diagnostic = sanitize(info)
+            m.emit({'type': 'gemini_api_batch' if self.is_api else 'agy_batch',
+                    'stage': 'Gemini API batch nhiều trang' if self.is_api else 'AGY batch nhiều trang',
                     'pages': len({i.page for i in missing}), 'regions': len(missing),
                     'characters': sum(map(len, protected)), 'context_characters': len(str(self.context))})
-            targets = self.provider.translate_batch(protected, missing[0].region.language,
-                item_ids=[i.id for i in missing], context=self.context if m.options.agy_context else [])
+            try:
+                targets = self.provider.translate_batch(protected, missing[0].region.language,
+                    item_ids=[i.id for i in missing], context=self.context if m.options.agy_context else [])
+            except Exception as exc:
+                attach(exc)
+                raise
             if len(targets) != len(missing):
-                raise ProviderSuspended('INVALID_RESPONSE', 'AGY không trả đủ vùng; không tự retry.')
+                error = ProviderSuspended('INVALID_RESPONSE', 'AGY không trả đủ vùng; không tự retry.')
+                attach(error)
+                raise error
             for item, target in zip(missing, targets):
                 try:
                     valid = service._translate_using(self.provider, item.region.text,
@@ -124,6 +147,7 @@ class MultiPageAGY:
                     m.journal['regions'][self.receipt_key(item)] = dict(context=context, target_hash=digest(valid))
                     m.resume_store.save(m.journal)  # Commit every validated region before rendering.
                 except Exception as exc:
+                    attach(exc, getattr(self.provider, 'last_diagnostic', None))
                     exc.region_index = item.region_index
                     self.errors[item.page] = (exc, dict(service.last_attempt))
         if m.options.agy_context:

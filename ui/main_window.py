@@ -13,6 +13,8 @@ from core.paths import CONFIG, ROOT
 from core.storage import TranslationCache, load_options, save_options
 from core.types import Options
 from providers.agy import MODE as AGY_MODE
+from providers.gemini_api import MODE as GEMINI_API_MODE, key_available
+from ui.provider_notice import gemini_usage_text
 from ui.models_dialog import ModelManagerDialog
 from ui.preview import PreviewDialog
 from ui.settings_dialog import SettingsDialog
@@ -115,7 +117,7 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel('Dịch')
         row.addWidget(self.mode_label)
         self.mode = QComboBox()
-        self.mode.addItems(['Offline', 'Online Free', AGY_MODE, 'Auto Fallback'])
+        self.mode.addItems(['Offline', 'Online Free', AGY_MODE, GEMINI_API_MODE, 'Auto Fallback'])
         self.mode.setCurrentText('Online Free' if self.options.mode == 'Online' else self.options.mode)
         self.mode.setItemData(0, 'Offline — Argos Translate / model cục bộ', Qt.ToolTipRole)
         self.mode.setItemData(1, 'Online Free — MyMemory Machine Translation API', Qt.ToolTipRole)
@@ -283,6 +285,11 @@ class MainWindow(QMainWindow):
                 'Model: ' + self.options.agy_model + '. Không dùng API key riêng hoặc tự dùng thêm credits; '
                 'file/shell/web/MCP bị chặn. Chỉ chạy khi bấm Bắt đầu; không tự đổi provider.')
 
+        if mode == GEMINI_API_MODE:
+            self.privacy.setText('Gemini API • ' + self.options.gemini_api_model +
+                (' • GEMINI_API_KEY: đã có (chưa kiểm tra mạng).' if key_available() else ' • Chưa có GEMINI_API_KEY.') +
+                ' Chỉ gửi OCR/context; không ảnh/tools. Kiểm tra project Free tier trong Cài đặt; không tự đổi provider.')
+
     def collect_options(self) -> Options:
         self.options.source = self.source.text().strip()
         self.options.output = self.output.text().strip()
@@ -357,8 +364,11 @@ class MainWindow(QMainWindow):
         if kind == 'resume_ready':
             self.resume_id = event['resume_id']
             return
-        if kind == 'agy_batch':
-            self.current.setText(f"AGY: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+        if kind in ('agy_batch', 'gemini_api_batch'):
+            self.current.setText(f"{'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+            return
+        if kind == 'gemini_api_usage':
+            self.privacy.setText(gemini_usage_text(event))
             return
         if kind == 'provider_paused':
             self.provider_paused = True

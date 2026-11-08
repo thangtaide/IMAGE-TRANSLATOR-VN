@@ -65,6 +65,15 @@ class DiagnosticLog:
                         if f.read(1) != b'\n':
                             self.path = self.directory / ('errors-' + uuid4().hex + '.jsonl')
                 data = dict(record, timestamp=datetime.now(timezone.utc).isoformat())
+                if 'agy_protocol' in data:
+                    from providers.agy_diagnostics import sanitize
+                    data['agy_protocol'] = sanitize(data['agy_protocol'])
+                    # Protocol diagnostics never retain OCR/target/path/exception payload,
+                    # regardless of the legacy sensitive-text diagnostic preference.
+                    for key in ('ocr_source_text', 'raw_translated_target', 'source_numeric_tokens',
+                                'target_numeric_tokens', 'image_path', 'output_path'):
+                        data[key] = None
+                    data['error_message'] = 'AGY diagnostic: see error_code and agy_protocol.'
                 truncated = []
                 for key, value in list(data.items()):
                     if isinstance(value, str):

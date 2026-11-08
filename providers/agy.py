@@ -17,6 +17,7 @@ from core.storage import digest
 from core.types import CancelledError
 from providers.base import TranslationProvider
 from providers.online import OnlineProviderError, ProviderSuspended
+from providers.agy_diagnostics import observe, transport, sanitize
 
 MODE = 'AI Gemini AGY'
 PROMPT_VERSION = 'comic-vi-id-json-v1-literal-numbers-effort-medium'
@@ -112,17 +113,19 @@ def run_bounded(argv: list[str], payload: bytes | None, cwd: Path, timeout: floa
         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
     overflow = threading.Event()
     buffers = [bytearray(), bytearray()]
-    def read(stream, buffer, cap):
+    observed = [0, 0]
+    def read(stream, buffer, cap, index):
         while True:
             block = stream.read(4096)
             if not block:
                 return
+            observed[index] += len(block)
             if len(buffer) + len(block) > cap:
                 overflow.set()
                 return
             buffer.extend(block)
-    readers = [threading.Thread(target=read, args=(stream, buffer, cap), daemon=True)
-               for stream, buffer, cap in [(process.stdout, buffers[0], limit), (process.stderr, buffers[1], 64_000)]]
+    readers = [threading.Thread(target=read, args=(stream, buffer, cap, index), daemon=True)
+               for index, (stream, buffer, cap) in enumerate([(process.stdout, buffers[0], limit), (process.stderr, buffers[1], 64_000)])]
     for thread in readers:
         thread.start()
     def write():
@@ -151,6 +154,10 @@ def run_bounded(argv: list[str], payload: bytes | None, cwd: Path, timeout: floa
         if overflow.is_set() or any(t.is_alive() for t in readers):
             raise OnlineProviderError('INVALID_RESPONSE', 'Không thu được output AGY trong giới hạn.')
         return process.returncode, bytes(buffers[0]), bytes(buffers[1])
+    except (OnlineProviderError, CancelledError) as exc:
+        exc.agy_diagnostic = transport(getattr(exc, 'code', 'CANCELLED'), observed[0], observed[1],
+            bytes(buffers[0]).count(b'\n'), process.poll(), overflow.is_set())
+        raise
     finally:
         stop_owned_process(process)
         if writer:
@@ -210,7 +217,7 @@ def protocol_metadata(stdout: bytes, stderr: bytes, code: int) -> dict:
     return result
 
 
-def parse_response(stdout: bytes, expected_ids: list[str], exit_code: int) -> list[str]:
+def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: int) -> list[str]:
     try:
         events = [strict_json(line) for line in stdout.decode('utf-8').splitlines() if line.strip()]
         if not events or any(not isinstance(event, dict) for event in events):
@@ -266,7 +273,32 @@ def parse_response(stdout: bytes, expected_ids: list[str], exit_code: int) -> li
                    'Unexpected tool use', 'Missing response string', 'Schema mismatch',
                    'Count mismatch', 'Unexpected fields', 'Invalid item', 'Missing region'}
         reason = str(exc) if str(exc) in reasons else 'JSON_PARSE'
-        raise OnlineProviderError('INVALID_RESPONSE', 'AGY trả JSON/ID/schema không hợp lệ ('+reason+'); giữ nguyên ảnh nguồn.') from None
+        error = OnlineProviderError('INVALID_RESPONSE', 'AGY trả JSON/ID/schema không hợp lệ ('+reason+'); giữ nguyên ảnh nguồn.')
+        error.agy_parser_reason = reason
+        raise error from None
+
+
+def parse_response(stdout: bytes, expected_ids: list[str], exit_code: int, *,
+                   stderr: bytes = b'', diagnostic: dict | None = None) -> list[str]:
+    """Observe the unchanged legacy verdict; classification has no control authority."""
+    def details(accepted, code='NONE', reason='NONE'):
+        try:
+            return observe(stdout, stderr, exit_code, strict_json, accepted, code, reason)
+        except Exception:
+            # Diagnostic failure must neither change nor misreport the legacy verdict.
+            meta = transport(code, len(stdout), len(stderr), exit_code=exit_code)
+            meta.update(guard_decision='ACCEPT' if accepted else 'REJECT',
+                        pending_preserved=not accepted, observation_failed=True)
+            return sanitize(meta)
+    try:
+        result = _parse_response_legacy(stdout, expected_ids, exit_code)
+    except OnlineProviderError as exc:
+        meta = details(False, exc.code, getattr(exc, 'agy_parser_reason', 'NONE'))
+        exc.agy_diagnostic = meta
+        if diagnostic is not None: diagnostic.update(meta)
+        raise
+    if diagnostic is not None: diagnostic.update(details(True))
+    return result
 
 
 class AGYProvider(TranslationProvider):
@@ -291,6 +323,7 @@ class AGYProvider(TranslationProvider):
         self.last_batch = None
         self.last_targets = []  # Transient only; QA may explicitly record bounded targets.
         self.last_protocol = None
+        self.last_diagnostic = None
         code, out, err = runner([str(self.path), '--help'], None, self.root, 10, cancelled)
         help_text = (out + err).decode('utf-8', errors='replace')
         if code or not all(flag in help_text for flag in REQUIRED_FLAGS):
@@ -338,6 +371,8 @@ class AGYProvider(TranslationProvider):
                 raise OnlineProviderError('INVALID_REQUEST', 'Batch AGY vượt12000ký tự; không cắt mất vùng OCR.')
             if self.requests_sent >= self.max_requests:
                 self.blocked = ProviderSuspended('REQUEST_LIMIT', 'Đã đạt giới hạn lượt AGY của job; cần người dùng tiếp tục/chọn phương thức.')
+                self.blocked.agy_diagnostic = self._diagnostic(transport('REQUEST_LIMIT'))
+                self.last_diagnostic = self.blocked.agy_diagnostic
                 raise self.blocked
             self.checkpoint()
             ids = item_ids if item_ids is not None else [f'r{n:04d}' for n in range(start, start+len(batch))]
@@ -364,24 +399,41 @@ class AGYProvider(TranslationProvider):
                 '--model', self.model, '--effort', self.effort, '--mode', 'plan', '--disable-slash-commands', '--sandbox',
                 '--print-timeout', str(self.timeout)+'s', '--settings', json.dumps(SESSION_SETTINGS), '--log-file', os.devnull]
             self.requests_sent += 1
+            self.last_diagnostic = None
             try:
                 code, stdout, stderr = self.runner(argv, payload, work, self.timeout, self.cancelled)
                 self.last_protocol = protocol_metadata(stdout, stderr, code)
                 self.last_batch = {'region_count': len(batch), 'request_number': self.requests_sent,
                                    'provider': self.engine_name, 'model': self.model, 'effort': self.effort, 'cli_version': self.version}
-                result = parse_response(stdout, ids, code)
+                self.last_diagnostic = {}
+                result = parse_response(stdout, ids, code, stderr=stderr, diagnostic=self.last_diagnostic)
+                self.last_diagnostic = self._diagnostic(self.last_diagnostic)
                 self.last_targets = list(result)
             except ProviderSuspended as exc:
+                self.last_diagnostic = self._diagnostic(getattr(exc, 'agy_diagnostic', None))
+                exc.agy_diagnostic = self.last_diagnostic
                 self.blocked = exc
                 raise
             except OnlineProviderError as exc:
                 # A broken protocol/timeout must not consume another request on
                 # each subsequent image. User can explicitly resume or change mode.
                 self.blocked = ProviderSuspended(exc.code, str(exc))
+                self.last_diagnostic = self._diagnostic(getattr(exc, 'agy_diagnostic', None) or transport(exc.code))
+                self.blocked.agy_diagnostic = self.last_diagnostic
                 raise self.blocked from None
+            except CancelledError as exc:
+                self.last_diagnostic = self._diagnostic(getattr(exc, 'agy_diagnostic', None) or transport('CANCELLED'))
+                exc.agy_diagnostic = self.last_diagnostic
+                raise
             self.checkpoint()
             translated.extend(result)
         return translated
+
+    def _diagnostic(self, data):
+        data = dict(data or transport('OTHER_ERROR'))
+        data.update(request_number=self.requests_sent, cli_version=self.version,
+                    model_identity_hash=digest(self.identity))
+        return sanitize(data)
 
     def translate(self, text: str, source: str, target: str = 'vi') -> str:
         return self.translate_batch([text], source, target)[0]

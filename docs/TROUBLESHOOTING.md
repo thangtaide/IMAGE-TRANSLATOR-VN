@@ -1,5 +1,64 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3D — Gemini API REST
+
+Key chỉ lấy từ `GEMINI_API_KEY`. Không gửi key/log chứa key cho người khác.
+Chỉ báo presence; không gọi API khi mở app hoặc chọn phương thức.
+
+| Mã | Ý nghĩa và thao tác |
+|---|---|
+| FREE_TIER_UNCONFIRMED | Chưa xác nhận project Free/không billing trong Cài đặt. Kiểm tra AI Studio trước khi tích. Không có API tự kiểm tra billing trong ứng dụng. |
+| AUTH_REQUIRED | Thiếu key hoặc HTTP401; kiểm tra biến môi trường, mở lại app. |
+| INVALID_REQUEST | Cấu hình/payload không hợp lệ hoặc HTTP400; không tự retry. Key lỗi cũng có thể được Google trả HTTP400. |
+| ACCESS_DENIED | HTTP403; kiểm tra quyền key/project/khu vực. Không đổi endpoint để né. |
+| MODEL_UNAVAILABLE | HTTP404; 2.5 Flash có thể không được cấp cho project. Không tự đổi model; cần QA/quyết định riêng. |
+| RATE_LIMITED | HTTP429 chưa đủ bằng chứng quota ngày; xem AI Studio, không tự đoán thời gian reset. |
+| QUOTA_EXCEEDED | HTTP429 kèm QuotaFailure/quotaId PerDay; dừng, không mua thêm. |
+| REQUEST_BUDGET | Đạt budget cục bộ, mặc định64lượt/phiên, không phải quota Google. |
+| PROVIDER_UNAVAILABLE | HTTP5xx/response khác200; không tự chuyển provider/model hoặc retry. Redirect không được theo. |
+| NETWORK_ERROR / TIMEOUT | Kết nối/TLS/proxy hoặc timeout. Giữ cấu hình mạng do môi trường quản lý. |
+| INVALID_RESPONSE / RESPONSE_BLOCKED | JSON/ID không hợp lệ hoặc candidate không STOP (gồm truncated/safety); giữ pending, không render. |
+| UNEXPECTED_TOOL_USE | Có part ngoài text, gồm functionCall hoặc metadata chưa hỗ trợ; fail closed. Không chứng minh công cụ đã được thực thi. |
+
+HTTP status được giữ trong exception provider; thông báo và diagnostic chỉ dùng
+mã/static message, không lưu body lỗi/URL chứa key. Token usage chỉ lấy các bộ
+đếm số nguyên allowlist. Không nhầm thông báo usage với bản dịch đã validation.
+Lỗi số vẫn theo `literal-numbers-v2-signed`: không nới guard cho provider API.
+
+Cancel/pause được kiểm tra trước request và trong đọc response; request đang
+chờ network có thể cần tới timeout kết nối8giây/đọc10giây để quay về checkpoint.
+Timeout tổng mặc định90giây. Không gửi lại request tự động vì một request đã
+được máy chủ nhận có thể tiêu thụ quota dù client timeout.
+
+Trước khi Tiếp tục, kiểm tra diagnostic và nguồn/output còn hợp lệ. Đổi provider
+chỉ thực hiện theo lựa chọn chủ động; không xóa cache/receipt để thử lại. Chưa
+nghiệm thu Gemini API thật, không dùng kết quả mock làm bằng chứng key Free tier.
+
+## Stage3C.1 — INVALID_RESPONSE / Unexpected tool use
+
+Không mặc định đây là quota, OCR sai, prompt injection hoặc quyền nội dung.
+Trong record mới, agy_protocol cho biết enum classification và event/path/type
+đã lọc; không có tool args hoặc raw response. ACTUAL_TOOL_REQUEST cần request
+tag + tên action + argument/input object trong contract mô phỏng; thiếu bằng
+chứng sẽ UNKNOWN_PROTOCOL_SHAPE. TOOL_METADATA_ONLY chỉ nhận khai báo kiểu
+JSON Schema hẹp, không phải mọi metadata/tools list. Tất cả vẫn theo guard cũ.
+
+- MALFORMED_RESPONSE: JSON/envelope/ID/schema hiện tại không hợp lệ.
+- UNKNOWN_PROTOCOL_SHAPE: chưa phân loại chắc chắn; không tự sửa allowlist.
+- guard_decision là verdict thật của parser cũ; classification không điều khiển
+  acceptance. Event phụ lạ được legacy cho phép và observer-failure không được
+  tự đổi verdict trong hotfix chỉ diagnostic. Xem unknown_event_count,
+  scan_truncated/observation_failed; không coi chúng là chứng nhận an toàn mới.
+- TIMEOUT/CANCELLED/REQUEST_LIMIT có thể không có stdout/exit code hoàn chỉnh;
+  bytes khi overflow/cancel là phần stream đã quan sát, không phải transcript đầy đủ.
+- Numeric reject vẫn không cache vùng sai/render dở; VALID_TRANSLATION_RESPONSE
+  chỉ nói schema phản hồi đã qua parser, không bỏ qua numeric/glossary guard.
+
+Lỗi276337 cũ chưa có protocol nên không thể retro-classify. Người dùng đã tự
+hoàn tất113output với1fallback106 trước Stage3C.1; hotfix không chạy lại job đó.
+Muốn xác minh sâu hơn cần diagnostic của lần sử dụng AGY chủ động trong tương
+lai hoặc QA được duyệt riêng. Không bấm retry lặp lại để dò lỗi, không xóa cache.
+
 ## IMAGE_LIST_READY, 0%, chưa có ảnh tải (08/11/2026)
 
 - Đây là kết thúc **phân tích**, chưa phải lỗi download. Giữ checkbox chương,

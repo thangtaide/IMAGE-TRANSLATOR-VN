@@ -1,5 +1,60 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Stage3D — chọn Gemini API chính thức
+
+1. Dùng bản source qua `run_source.bat`. Bốn EXE cũ chưa chứa Stage3D.
+2. Cung cấp `GEMINI_API_KEY` qua biến môi trường Windows rồi mở lại ứng dụng.
+   Không nhập key vào URL, glossary, config, log hoặc Git. Ứng dụng chỉ hiển thị
+   đã có/chưa có key; trạng thái này chưa xác minh key trên mạng.
+3. Tại AI Studio, kiểm tra project của key là **Free tier, không gắn billing**.
+   Mở Cài đặt, tích xác nhận Free tier chỉ khi điều đó đúng. Kiểm tra lại khi đổi
+   key/project hoặc billing. Ứng dụng không thể xác minh billing bằng key; xác
+   nhận này không biến key Paid thành Free. Không dùng key Paid cho chế độ này.
+4. Chọn **AI Gemini API** ở phương thức dịch chung cho cả ba tab. Offline vẫn là
+   mặc định của cấu hình mới; ứng dụng không tự đổi lựa chọn đã lưu của bạn.
+5. Bấm Bắt đầu/Tải và dịch hoặc Tiếp tục theo nguồn hiện tại. Dán URL/phân tích
+   link/mở ứng dụng không tự gửi OCR tới Gemini. Chỉ text OCR/context được gửi,
+   không ảnh, DB hoặc đường dẫn. Dữ liệu Free tier có thể được Google dùng cải
+   thiện sản phẩm; không dùng với nội dung nhạy cảm.
+
+Model Stage3D là `gemini-2.5-flash`; Google hạn chế quyền truy cập 2.5 theo lịch sử
+dự án. Nếu model không khả dụng, ứng dụng báo MODEL_UNAVAILABLE; không tự đổi
+sang model khác. Chưa chạy QA API thật; không bảo đảm key/project hiện tại dùng
+được model chỉ từ kết quả mock.
+
+Batch dùng cấu hình chung **AGY / API** trong Cài đặt: mặc định3.000ký tự,
+60vùng, tối đa16trang có chữ; context tối đa8vùng/1.600ký tự JSON đã qua guard,
+có thể tắt. Numeric/glossary guard giữ nguyên. Qua guard không chứng minh đúng
+nghĩa; cách viết ngày đổi thứ tự số vẫn có thể bị từ chối như trước.
+
+UI hiển thị model, key presence và token input/output/total khi response cung cấp;
+`?` là không có dữ liệu. Giới hạn64request/phiên là budget cục bộ, không phải
+quota Google. Quota/RPM/TPM/RPD thực tế xem AI Studio; không bịa số lượt còn lại.
+
+Quota/rate/auth/timeout/JSON lỗi làm tạm dừng, có thông báo × và diagnostic của
+job. Đóng × chỉ ẩn thông báo. Không tự retry hoặc đổi provider. Bạn có thể chọn
+Offline/MyMemory/AGY rồi Tiếp tục phần pending; receipt output thành công được
+giữ, OCR cache tái sử dụng nếu recipe/source không đổi, cache dịch tách provider.
+Không sửa journal bằng tay. Không chạy lại trang111/chương production để thử API.
+
+## Stage3C.1 — đọc diagnostic AGY an toàn
+
+Khi AGY bị từ chối, mở thư mục diagnostic của job, xem record mới trong
+`errors.jsonl`, nhóm `agy_protocol`: classification, parser_error_code/reason,
+guard_decision, event_type, path/type nghi vấn, batch/page/region/character count.
+Classification chỉ là quan sát; guard_decision là verdict giao thức cũ, chưa
+thay numeric/glossary validation. VALID_TRANSLATION_RESPONSE không bảo đảm đúng nghĩa.
+
+Tool metadata chưa rõ sẽ UNKNOWN; khai báo kiểu có cấu trúc có thể được gắn
+TOOL_METADATA_ONLY nhưng **vẫn bị từ chối như trước**. Không tự nới guard/đổi
+provider/retry. Không coi ACTUAL_TOOL_REQUEST là bằng chứng công cụ đã thực thi.
+Thông báo UI chung vẫn như Stage3C; dùng diagnostic để biết lý do cụ thể.
+
+Các record mới có agy_protocol không lưu OCR/target/path/raw exception hoặc
+raw stdout/stderr, kể cả bật diagnostic văn bản. Argos/MyMemory giữ chính sách
+diagnostic cũ. Log lịch sử không bị xóa/scrub: khi chia sẻ chỉ trích nhóm metadata
+đã lọc của record mới và mã lỗi, không gửi toàn bộ log hoặc credential.
+
 ## Khi Kuaikan dừng ở IMAGE_LIST_READY (08/11/2026)
 
 `Phân tích ảnh chương` chỉ tìm URL ảnh, không tải bitmap. Sau khi phân tích,

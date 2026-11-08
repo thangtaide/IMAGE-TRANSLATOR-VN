@@ -10,6 +10,7 @@ from core.ocr import PaddleOCREngine
 from core.paths import CACHE, ROOT
 from core.pipeline import JobControl, ProcessingManager, TranslationService
 from providers.agy import MODE as AGY_MODE
+from providers.gemini_api import MODE as GEMINI_API_MODE
 from core.storage import TranslationCache, digest, file_digest
 from core.types import CancelledError, Options
 from core.diagnostics import DiagnosticLog, safe_text, VALIDATOR_VERSION, TRANSLATED_SUCCESS, FALLBACK_ORIGINAL, FAILED_NO_OUTPUT
@@ -77,7 +78,7 @@ class LocalComicJob:
         self.options = Options.from_dict(options.to_dict())
         # Legacy source jobs retain Offline enforcement. The explicitly selected
         # Stage3A mode is opt-in and shares the existing processing service.
-        if self.options.mode not in ('Online Free', AGY_MODE):
+        if self.options.mode not in ('Online Free', AGY_MODE, GEMINI_API_MODE):
             self.options.mode = 'Offline'
         self.options.allow_online_fallback = False
         self.keep_cached = keep_cached

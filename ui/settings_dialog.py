@@ -29,8 +29,8 @@ class SettingsDialog(QDialog):
                 ('Khoảng cách dòng', 'line_spacing', 0, 20), ('Viền chữ', 'stroke', 0, 5),
                 ('Nới mask (px)', 'mask_expand', 0, 8), ('Chất lượng JPEG/WEBP', 'quality', 10, 100),
                 ('Tile OCR (px)', 'tile_size', 512, 2400),
-                ('AGY ký tự mục tiêu/batch', 'agy_batch_chars', 100, 12000),
-                ('AGY vùng tối đa/batch', 'agy_batch_regions', 1, 60)]:
+                ('AGY / API ký tự mục tiêu/batch', 'agy_batch_chars', 100, 12000),
+                ('AGY / API vùng tối đa/batch', 'agy_batch_regions', 1, 60)]:
             widget = QSpinBox()
             widget.setRange(low, high)
             widget.setValue(getattr(options, name))
@@ -68,8 +68,18 @@ class SettingsDialog(QDialog):
         form.addRow('AGY executable (.exe)', self.agy_executable)
         self.agy_model = QLineEdit(options.agy_model)
         form.addRow('AGY Gemini model slug', self.agy_model)
+        self.gemini_api_model = QLineEdit(options.gemini_api_model)
+        self.gemini_api_model.setReadOnly(True)
+        form.addRow('Gemini API model (không tự chuyển)', self.gemini_api_model)
+        self.gemini_api_free = QCheckBox('Tôi đã kiểm tra project của GEMINI_API_KEY là Free tier, không gắn billing')
+        self.gemini_api_free.setChecked(options.gemini_api_free_tier_confirmed)
+        form.addRow('Gemini API — chỉ dùng miễn phí', self.gemini_api_free)
+        form.addRow(QLabel('Key chỉ lấy từ GEMINI_API_KEY của tiến trình. Không nhập/lưu key trong ứng dụng.\n'
+                          'Có key chưa chứng minh model khả dụng hoặc project Free. Không gọi API để kiểm tra khi mở.'))
         for title, name, low, high in [('Timeout AGY (giây)', 'agy_timeout', 10, 300),
-                                      ('Lượt AGY tối đa/job', 'agy_max_requests', 1, 128)]:
+                                      ('Lượt AGY tối đa/job', 'agy_max_requests', 1, 128),
+                                      ('Timeout Gemini API (giây)', 'gemini_api_timeout', 10, 300),
+                                      ('Lượt Gemini API tối đa/phiên', 'gemini_api_max_requests', 1, 128)]:
             widget = QSpinBox()
             widget.setRange(low, high)
             widget.setValue(getattr(options, name))
@@ -85,7 +95,7 @@ class SettingsDialog(QDialog):
         self.diagnostic_text = QCheckBox('Lưu văn bản OCR/bản dịch bị lỗi trong diagnostic cục bộ (giới hạn độ dài)')
         self.diagnostic_text.setChecked(options.diagnostic_text)
         outer.addWidget(self.diagnostic_text)
-        self.agy_context = QCheckBox('AGY: mang theo tối đa1600ký tự ngữ cảnh đã qua validation')
+        self.agy_context = QCheckBox('AGY / Gemini API: mang theo tối đa1600ký tự ngữ cảnh đã qua validation')
         self.agy_context.setChecked(options.agy_context)
         outer.addWidget(self.agy_context)
         note = QLabel('MyMemory API ẩn danh: 5.000 ký tự/ngày, tối đa 500 byte/request.\n'
@@ -135,6 +145,7 @@ class SettingsDialog(QDialog):
         self.options.agy_context = self.agy_context.isChecked()
         self.options.agy_executable = self.agy_executable.text().strip()
         self.options.agy_model = model
+        self.options.gemini_api_free_tier_confirmed = self.gemini_api_free.isChecked()
         for name, combo in self.combos.items():
             setattr(self.options, name, combo.currentData())
         self.options.font = self.font.text().strip()

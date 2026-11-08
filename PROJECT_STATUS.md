@@ -1,5 +1,56 @@
 # Trạng thái Image Translator VN
 
+## Stage3D — Gemini API REST, 08/11/2026
+
+**STAGE_3D_IMPLEMENTED_QA_PENDING**. Thêm phương thức AI Gemini API, độc lập AGY,
+dùng REST chính thức qua requests sẵn có, GEMINI_API_KEY header-only, không cài
+SDK. Model allowlist gemini-2.5-flash; chưa kiểm tra quyền model/key/project thật.
+Google vẫn có Free tier nhưng hạn chế truy cập2.5 theo dự án. Cài đặt yêu cầu
+người dùng đã kiểm tra project Free/không billing; app không tự xác minh billing,
+không tự chuyển model/paid tier. Offline vẫn default, Argos/MyMemory/AGY giữ nguyên.
+
+Reuse planner3.000ký tự/60vùng/16trang và context8vùng/1.600ký tự, exact JSON ID,
+guard literal-numbers-v2-signed/glossary cũ, cache API riêng, OCR/receipt/resume
+cũ. Quota/auth/network/protocol lỗi pause, không auto retry/provider switch.
+UI hiển thị key presence/model/token counters nếu có; không bịa quota còn lại.
+
+33test mới. Pytest và unittest cuối mỗi bộ401PASS/10SKIPPED/0FAIL (411ca), Qt
+Windows offscreen và E2E OCR/Argos thật PASS. Một lượt pytest trung gian có1lỗi
+StopIteration ở test downloader mock cũ; giữ evidence, không sửa/xóa test;
+focused và full chạy tuần tự lại PASS. Không coi đó là lỗi live website/API.
+
+1.058/1.058file bảo vệ giữ hash. Baseline276337 đã được người dùng tiếp tục từ
+trước:113output/112normal+fallback106, không rollback về56/57. Chương274872 giữ
+120output/119normal+fallback111. Normal không đồng nghĩa mọi trang đều đã dịch chữ.
+Không resume/download/build/cài dependency; không gọi Gemini/AGY/MyMemory thật.
+Giữ13file thay đổi Stage3C.1 có sẵn, không tự stage/commit/push. Xem
+docs/STAGE3D_GEMINI_API_REPORT.md và logs/stage3d-20261108T100403Z.
+
+## Stage3C.1 — safe AGY protocol diagnostics, 08/11/2026
+
+**STAGE_3C1_DIAGNOSTICS_WITH_WARNINGS**. Thêm observer/classification/path/type/
+redacted fingerprint, transport counters và batch metadata vào lỗi AGY. Guard
+predicate/verdict, prompt/CLI settings, budget, cache identity, numeric/glossary,
+packing/context và journal schema giữ nguyên. Metadata vẫn reject như trước;
+chưa chứng minh false positive của lỗi lịch sử276337. Không live AGY/MyMemory.
+
+19test mới +20manual fixture cases; pytest/unittest mỗi bộ368PASS/10SKIPPED/
+0FAIL (378ca).1058/1058file bảo vệ giữ hash. Người dùng đã tự tiếp tục job trước
+stage này: baseline thật113output/112pipeline-normal+fallback106,needs_retry106;
+không rollback về56output/57pending và không retry. Không build/dependency mới.
+Xem docs/STAGE3C1_AGY_TOOL_USE_DIAGNOSTICS_REPORT.md và
+docs/STAGE3C1_WORK_PROGRESS.md; metadata chỉ chuẩn bị cho lỗi tương lai, không
+tự sửa/parser-relax hoặc tái hiện jobproduction.
+
+## Điều tra pause Stage3C — 08/11/2026 (không hotfix)
+
+Job09fdd522…/chapter276337 tạm dừng tại57 vì diagnostic ghi
+INVALID_RESPONSE / Unexpected tool use, không phải content permission UNKNOWN
+hay quota.113ảnh cache/56output/receipt hợp lệ,57pending; chưa biết tool event
+thực hay metadata false positive vì protocol không được persist. Chỉ điều tra
+read-only và viết docs; không Resume/AGY/HTTP/test/build/sửa source. Xem
+`docs/STAGE3C_PAUSE_ROOT_CAUSE_INVESTIGATION.md`; hotfix diagnostic/UI chờ duyệt.
+
 ## Mới nhất — Stage3C multi-page AGY và persistent resume, 08/11/2026
 
 **STAGE_3C_COMPLETED_WITH_WARNINGS**. Đã thêm planner OCR nhiều trang dùng engine/

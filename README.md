@@ -1,5 +1,23 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3D — Gemini API chính thức (bản source)
+
+Bổ sung **AI Gemini API**, giữ nguyên Offline Argos (mặc định), Online Free
+MyMemory và AI Gemini AGY. Provider mới dùng REST `generateContent`, không phụ
+thuộc AGY/NDJSON, không cần cài SDK. Chỉ gửi OCR/context khi chủ động chạy.
+
+Đặt `GEMINI_API_KEY` trong môi trường Windows rồi mở lại ứng dụng; không lưu key
+trong config/Git. Trong Cài đặt, chỉ xác nhận Free tier sau khi kiểm tra project
+của key ở AI Studio **không gắn billing**. Chọn AI Gemini API rồi Bắt đầu/Tiếp tục.
+Model cố định `gemini-2.5-flash`; Google đang giới hạn truy cập 2.5 theo dự án.
+Không tự đổi model/provider khi bị từ chối. Checkbox là xác nhận của người dùng,
+không phải xác minh billing từ Google; key dự án Paid có thể phát sinh phí.
+
+**Chưa gọi Gemini API thật trong Stage3D.** Chỉ có kiểm thử mock/local; quyền
+truy cập model, quota dự án và chất lượng dịch thật còn chờ QA được duyệt riêng.
+Không build EXE. Xem [báo cáo Stage3D](docs/STAGE3D_GEMINI_API_REPORT.md) và
+[hướng dẫn](docs/USER_GUIDE.md). Các mục dưới giữ lịch sử Stage trước.
+
 ## Stage3B — AI Gemini AGY trong bản source
 
 Bản source có lựa chọn **AI Gemini AGY** và cài đặt executable/model/giới hạn.

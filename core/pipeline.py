@@ -24,6 +24,7 @@ from core.diagnostics import (DiagnosticLog, VALIDATOR_VERSION, safe_text,
 from providers.offline import create_offline_provider
 from providers.online import LibreTranslateProvider, MyMemoryProvider, ProviderError, ProviderSuspended
 from providers.agy import AGYProvider, MODE as AGY_MODE
+from providers.gemini_api import GeminiAPIProvider, MODE as GEMINI_API_MODE
 
 LOGGER = logging.getLogger(__name__)
 NUMBER_PATTERN = r'[+\-−－＋]?\d+(?:[.,:/%+−-]\d+)*%?'
@@ -85,6 +86,7 @@ class TranslationService:
         self.offline = offline
         self.online = online
         self.agy = None
+        self.gemini_api = None
         self.last_attempt: dict = {}
 
     def _offline(self):
@@ -109,6 +111,8 @@ class TranslationService:
         parts = ['literal-numbers-v1', self.options.mode, self.options.allow_online_fallback, self.options.glossary]
         if self.options.mode == AGY_MODE:
             return digest(parts + [self._agy().identity])
+        if self.options.mode == GEMINI_API_MODE:
+            return digest(parts + [self._gemini_api().identity])
         if self.options.mode not in ('Online', 'Online Free'):
             parts.append(self._offline().identity)
         if self.options.mode in ('Online', 'Online Free') or (self.options.mode == 'Auto Fallback' and self.options.allow_online_fallback):
@@ -132,11 +136,19 @@ class TranslationService:
             chunks.append(current)
         return chunks
 
+    def _gemini_api(self):
+        if self.gemini_api is None:
+            self.gemini_api = GeminiAPIProvider(model=self.options.gemini_api_model,
+                timeout=self.options.gemini_api_timeout, max_requests=self.options.gemini_api_max_requests,
+                free_tier_confirmed=self.options.gemini_api_free_tier_confirmed,
+                checkpoint=self.control.checkpoint)
+        return self.gemini_api
+
     def _translate_using(self, provider, text: str, language: str, context: str,
                          deferred: list | None = None, raw_target: str | None = None) -> str | None:
         provider_name = getattr(provider, 'engine_name', None)
         self.last_attempt = {'provider': provider_name if isinstance(provider_name, str) else type(provider).__name__,
-                             'model_identity': provider.identity, 'mode': AGY_MODE if self.options.mode == AGY_MODE else 'Online' if provider.online else 'Offline',
+                             'model_identity': provider.identity, 'mode': self.options.mode if self.options.mode in (AGY_MODE, GEMINI_API_MODE) else 'Online' if provider.online else 'Offline',
                              'ocr_source_text': text, 'raw_translated_target': None}
         key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, 'glossary-v3-literal-numbers'])
         cached = self.cache.get('translation', key)
@@ -194,6 +206,8 @@ class TranslationService:
         self.last_attempt = {}
         if self.options.mode == AGY_MODE:
             return self._translate_using(self._agy(), text, language, context)
+        if self.options.mode == GEMINI_API_MODE:
+            return self._translate_using(self._gemini_api(), text, language, context)
         if self.options.mode in ('Online', 'Online Free'):
             return self._translate_using(self._online(), text, language, context)
         try:
@@ -206,7 +220,7 @@ class TranslationService:
 
     def translate_regions(self, regions: list[OCRResult], context: str) -> list[str]:
         """Batch only cache misses; retain the exact existing per-region guard/cache."""
-        provider = self._agy()
+        provider = self._gemini_api() if self.options.mode == GEMINI_API_MODE else self._agy()
         results, pending = [], []
         for region in regions:
             results.append(self._translate_using(provider, region.text, region.language, context, deferred=pending))
@@ -237,6 +251,8 @@ class TranslationService:
             self.online.close()
         if self.agy is not None:
             self.agy.close()
+        if self.gemini_api is not None:
+            self.gemini_api.close()
 
 
 class ProcessingManager:
@@ -365,7 +381,7 @@ class ProcessingManager:
         for reserved in ('models', 'config', 'cache', 'logs', 'ui', 'core', 'providers', 'scripts', 'tests', '.venv', 'assets'):
             if self.output.is_relative_to((ROOT / reserved).resolve()):
                 raise ValueError('Thư mục xuất trùng khu vực mã nguồn/model/cache của ứng dụng')
-        if self.options.mode not in ('Online', 'Online Free', 'Offline', 'Auto Fallback', AGY_MODE):
+        if self.options.mode not in ('Online', 'Online Free', 'Offline', 'Auto Fallback', AGY_MODE, GEMINI_API_MODE):
             raise ValueError('Chế độ dịch không hợp lệ')
         if self.options.language not in ('zh', 'zt', 'ko', 'en', 'auto'):
             raise ValueError('Ngôn ngữ OCR không hợp lệ')
@@ -434,6 +450,9 @@ class ProcessingManager:
             relevant.pop('skip_success', None)
             # Operational logging must not invalidate existing job/translation keys.
             relevant.pop('diagnostic_text', None)
+            for key in ('gemini_api_model', 'gemini_api_timeout', 'gemini_api_max_requests', 'gemini_api_free_tier_confirmed'):
+                if self.options.mode != GEMINI_API_MODE or key == 'gemini_api_free_tier_confirmed':
+                    relevant.pop(key, None)
             if self.options.mode != AGY_MODE:
                 # Adding optional AGY settings must not invalidate old jobs.
                 for key in ('agy_executable', 'agy_model', 'agy_timeout', 'agy_max_requests',
@@ -441,6 +460,9 @@ class ProcessingManager:
                     relevant.pop(key, None)
             else:
                 relevant['agy_batch_revision'] = 'multipage-ids-context-v1'
+            if self.options.mode == GEMINI_API_MODE:
+                relevant['gemini_api_batch_recipe'] = ['multipage-ids-context-v1',
+                    self.options.agy_batch_chars, self.options.agy_batch_regions, self.options.agy_context]
             font_path = Path(self.options.font) if self.options.font else default_font()
             relevant['font_sha256'] = file_digest(font_path) if font_path.is_file() else 'missing-font'
             if self.options.erase_mode == 'custom' and self.options.mask_path:
@@ -449,7 +471,7 @@ class ProcessingManager:
             self.diagnostics = DiagnosticLog(self.job_id, self.options.diagnostic_text, self.diagnostic_root)
             self.cache.job(self.job_id, self.options, 'running')
             batching = None
-            if self.options.mode == AGY_MODE and files and preflight_error is None:
+            if self.options.mode in (AGY_MODE, GEMINI_API_MODE) and files and preflight_error is None:
                 from core.multipage import MultiPageAGY
                 batching = MultiPageAGY(self, files, relevant, ocr_identity, service_identity)
             for index, path in enumerate(files):
@@ -507,7 +529,7 @@ class ProcessingManager:
                     context = digest([r.text for r in regions])
                     translations = []
                     stage = 'TRANSLATION'
-                    if self.options.mode == AGY_MODE and regions:
+                    if self.options.mode in (AGY_MODE, GEMINI_API_MODE) and regions:
                         region_index, current_region = 0, regions[0]
                         try:
                             translations = batching.for_page(path, regions)
@@ -515,7 +537,7 @@ class ProcessingManager:
                             region_index = getattr(exc, 'region_index', 0)
                             current_region = regions[region_index]
                             raise
-                    for n, region in enumerate([] if self.options.mode == AGY_MODE else regions):
+                    for n, region in enumerate([] if self.options.mode in (AGY_MODE, GEMINI_API_MODE) else regions):
                         region_index, current_region = n, region
                         self.control.checkpoint()
                         translations.append(self.service.translate(region.text, region.language, context))
@@ -569,6 +591,9 @@ class ProcessingManager:
                         stage='TRANSLATION', error_code=exc.code, error_message=str(exc),
                         exception_type=type(exc).__name__, checkpoint_state='paused_provider',
                         fallback_action='NONE', **self.service.last_attempt)
+                    if self.options.mode == AGY_MODE:
+                        from providers.agy_diagnostics import transport
+                        record['agy_protocol'] = getattr(exc, 'agy_diagnostic', None) or transport(exc.code)
                     log_path = self.diagnostics.write(record)
                     self.cache.checkpoint(self.job_id, str(path), 'paused_provider',
                                           fingerprint=fingerprint, detail=exc.code)
@@ -577,7 +602,12 @@ class ProcessingManager:
                         pending_paths=pending_paths))
                     state = 'paused_provider'
                     break
-                except CancelledError:
+                except CancelledError as exc:
+                    if self.options.mode == AGY_MODE and getattr(exc, 'agy_diagnostic', None):
+                        self.diagnostics.write(dict(job_id=self.job_id, chapter_id=self.chapter_id,
+                            image_index=image_indices[str(path)], image_filename=path.name,
+                            stage='TRANSLATION', error_code='CANCELLED', checkpoint_state='cancelled',
+                            provider='AGY Gemini', mode=AGY_MODE, agy_protocol=exc.agy_diagnostic))
                     self.cache.checkpoint(self.job_id, str(path), 'cancelled')
                     raise
                 except Exception as exc:
@@ -615,6 +645,9 @@ class ProcessingManager:
                         retry_count=attempt.get('retry_count', 0), fallback_action=status, output_status=status,
                         output_path=str(output) if output else None, checkpoint_state=checkpoint,
                         fallback_error=fallback_error)
+                    if self.options.mode == AGY_MODE:
+                        from providers.agy_diagnostics import transport
+                        record['agy_protocol'] = getattr(exc, 'agy_diagnostic', None) or transport(code)
                     log_path = self.diagnostics.write(record)
                     # UI/checkpoints receive metadata only, never raw OCR/provider text.
                     review = {k: record[k] for k in ('job_id', 'chapter_id', 'image_index', 'image_filename', 'image_path',

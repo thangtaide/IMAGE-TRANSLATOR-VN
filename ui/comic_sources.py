@@ -590,8 +590,12 @@ class ComicSourcesPanel(QWidget):
             self.paused_chapter = chapter_id
             self.provider_notice.show_error(event)
             self.status.setText(event['code'] + ' • Tạm dừng; không chuyển provider tự động.')
-        elif kind == 'pipeline' and event.get('pipeline_event_type') == 'agy_batch':
-            self.status.setText(f"AGY: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+        elif kind == 'pipeline' and event.get('pipeline_event_type') == 'gemini_api_usage':
+            from ui.provider_notice import gemini_usage_text
+            self.policy.setText(gemini_usage_text(event))
+        elif kind == 'pipeline' and event.get('pipeline_event_type') in ('agy_batch', 'gemini_api_batch'):
+            provider = 'Gemini API' if event['pipeline_event_type'] == 'gemini_api_batch' else 'AGY'
+            self.status.setText(f"{provider}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
             if row is not None:
                 self.table.item(row, 5).setText('Đang dịch batch nhiều trang')
         elif kind == 'pipeline' and event.get('stage'):
