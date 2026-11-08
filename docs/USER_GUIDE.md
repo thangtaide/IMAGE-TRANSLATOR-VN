@@ -1,5 +1,50 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Stage3D.1 — giao diện gọn và preflight
+
+Nếu app đang mở từ trước cập nhật, đóng an toàn và mở lại `run_source.bat` để
+nạp GUI mới; EXE cũ chưa chứa hotfix. Công việc đã lưu có thể khôi phục qua Thêm,
+không tự tiếp tục khi mở ứng dụng.
+
+- Thanh trên dùng chung ba tab: OCR → phương thức dịch → model/provider → Cài đặt.
+  Provider Online/Offline phụ và ô đồng ý Auto Fallback nằm trong Cài đặt; chỉ
+  đổi layout không đổi phương thức hoặc tự bật gửi Online.
+- Tab Link truyện: nhập URL và Phân tích link chỉ discovery, không tự tải/dịch.
+  Bấm **Thư mục xuất** để xem/đổi đường dẫn. **Tùy chọn nguồn/cache** chứa giữ
+  cache, thử lại phân tích, phân tích ảnh và cột nâng cao.
+- Bảng chương còn Chọn/Thứ tự/Tên chương/Trạng thái. Hover tên chương hoặc mở
+  tùy chọn để đọc truy cập/số URL ảnh/điều kiện tải; không mất dữ liệu hoặc đổi
+  thứ tự xử lý. Metadata vẫn hiển thị số URL ảnh, thông tin đầy đủ ở tooltip.
+- Các nút chính: Tải và dịch, Tạm dừng, Tiếp tục từ cache, Hủy, Mở kết quả.
+  **Thêm** chứa khôi phục công việc đã lưu, retry lỗi và trang cần xem lại/log.
+  Ở tab thư mục, menu Thêm cũng có Mô hình cục bộ. Nội dung dài dùng vùng cuộn,
+  không cần maximize; ở scaling150% có thể cần cuộn dọc.
+
+Nếu thấy **Cần hoàn tất thiết lập Gemini API / FREE_TIER_UNCONFIRMED**:
+
+1. Bấm **Mở Cài đặt Gemini API** trong thông báo hoặc Cài đặt trên thanh chung.
+2. Dùng liên kết Google AI Studio để **tự kiểm tra** project của key đang dùng
+   là Free tier và không gắn billing. Ứng dụng không xác minh billing hoặc key.
+3. Chỉ khi đã kiểm tra đúng, tự tích **Đã kiểm tra project Free tier, không gắn
+   billing** và bấm OK. Ứng dụng không tự tích ô này hoặc mở billing.
+4. Chủ động **Tiếp tục từ cache** nếu đang có job pending, hoặc Bắt đầu/Tải và
+   dịch nếu chưa bắt đầu. Nếu vừa mở lại ứng dụng, dùng **Thêm → Khôi phục công
+   việc đã lưu**, sau khi đã chọn phương thức/cài đặt mong muốn. Receipt output
+   thành công được xác minh và giữ nguyên. Không tự sửa journal hoặc xóa cache.
+
+`API_KEY_MISSING` là chưa có GEMINI_API_KEY; thiết lập biến môi trường Windows
+rồi mở lại ứng dụng. `READY_UNVERIFIED` chỉ xác nhận đủ cấu hình cục bộ, không
+chứng minh key hợp lệ hoặc model2.5Flash được cấp. Chưa có request API thật trong
+nghiệm thu Stage3D.1. Không tự chuyển model/provider nếu bước API sau này bị từ chối.
+
+Thông báo phân biệt thiếu thiết lập, người dùng Pause và lỗi provider. Chỉ khi
+có bằng chứng tại luồng chặn mới ghi request chưa gửi, với phạm vi thao tác/batch
+hiện tại; không suy rộng cho lịch sử. **Chi tiết / Nhật ký** mở lịch sử đã lọc
+(mã/provider/giờ/trang nếu có), không hiển thị key, raw response hoặc OCR.
+× chỉ ẩn thông báo; không resume. Sửa thiết lập sẽ ẩn cảnh báo cấu hình cũ nhưng
+giữ lịch sử/pending, không tự chạy. AGY Unexpected tool use là guard từ chối,
+không phải bằng chứng quota hay tool invocation thực sự.
+
 ## Stage3D — chọn Gemini API chính thức
 
 1. Dùng bản source qua `run_source.bat`. Bốn EXE cũ chưa chứa Stage3D.

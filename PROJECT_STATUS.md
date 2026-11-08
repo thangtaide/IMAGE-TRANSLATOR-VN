@@ -1,5 +1,31 @@
 # Trạng thái Image Translator VN
 
+## Stage3D.1 — API preflight và compact GUI, 08/11/2026
+
+**STAGE_3D1_WITH_WARNINGS**. HEAD baseline mới7ee5962/main, repo sạch khi bắt
+đầu. Đã xác minh jobe26eec3c…/chapter276880 dừng vì flag Free=false trong config/
+journals, không phải quota/model/key đã bị API từ chối. Nhánh gây lỗi ở trước
+HTTP. Journal109pending/0done,35ocr_ready; không suy mọi lượt lịch sử đều0request.
+
+Thêm local preflight API_KEY_MISSING/FREE_TIER_UNCONFIRMED/READY_UNVERIFIED trước
+Start/begin/restore worker. Có key/đủ cấu hình không chứng minh quyền model hoặc
+billing. Cảnh báo có hướng dẫn/nút mở đúng Cài đặt, log metadata được lọc, × không
+resume. Guard AGY Unexpected tool use không bị gán thành quota/invocation đã xác
+minh. Không nới guard/bật billing/auto retry/switch. Preflight diagnostic không OCR.
+
+Thanh OCR/mode/model/Cài đặt gọn, provider phụ/consent ở Settings; URL/output/cache
+thu gọn, bảng4cột mặc định và dữ liệu kỹ thuật ở tooltip/nâng cao, thao tác phụ
+ở Thêm. Giữ lựa chọn/order và Offline default mới, không đổi mode đã lưu. Restore
+GUI giữ provider/xác nhận hiện tại thay vì Options cũ ghi đè; ResumeStore/journal/
+recipe/cache/numeric/glossary/multipage/AGY/Argos/MyMemory giữ nguyên semantics.
+
+26test mới; pytest/unittest cuối mỗi bộ427PASS/10SKIPPED/0FAIL (437ca). Qt Windows
+offscreen/OCR Trung/Argos/E2E thật PASS.9layout cases3độ phân giải ×100/125/150%
+với QtDPR thật PASS; chưa nghiệm thu monitor/Windows scaling thủ công hoặc Gemini
+API thật.2.310/2.310file bảo vệ giữ SHA256, gồm job276880/các job cũ/model/config/
+DB/journal/output/4EXE. Không resume/download/dependency/build hoặc API/AGY live.
+Xem docs/STAGE3D1_API_PREFLIGHT_COMPACT_UI_REPORT.md và logs/stage3d1-20261108T103529Z.
+
 ## Stage3D — Gemini API REST, 08/11/2026
 
 **STAGE_3D_IMPLEMENTED_QA_PENDING**. Thêm phương thức AI Gemini API, độc lập AGY,

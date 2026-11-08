@@ -4,19 +4,26 @@ import json
 
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QDoubleSpinBox, QVBoxLayout,
-    QScrollArea, QWidget)
+    QScrollArea, QWidget, QGroupBox)
 
 from core.types import Options
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, options: Options, parent=None):
+    def __init__(self, options: Options, parent=None, focus_section=None):
         super().__init__(parent)
         self.options = options
         self.setWindowTitle('Cài đặt xuất ảnh, font và thuật ngữ')
         self.resize(640, 720)
+        screen = self.screen().availableGeometry()
+        self.resize(min(640, screen.width()-40), min(720, screen.height()-60))
         outer = QVBoxLayout(self)
+        self.api_group = QGroupBox('Gemini API — thiết lập cục bộ')
+        api_form = QFormLayout(self.api_group)
+        api_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        outer.addWidget(self.api_group)
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.font = QLineEdit(options.font)
         browse = QPushButton('Chọn TTF/OTF')
         browse.clicked.connect(self.choose_font)
@@ -63,6 +70,17 @@ class SettingsDialog(QDialog):
         form.addRow('Mask: trắng = vùng xóa', mask_row)
         self.endpoint = QLineEdit(options.endpoint)
         form.addRow('LibreTranslate miễn phí / tự host', self.endpoint)
+        for title, name, values in [('Provider Offline', 'offline_provider', ['Argos', 'CTranslate2', 'M2M100']),
+                                    ('Provider Online', 'online_provider', ['MyMemory', 'LibreTranslate'])]:
+            combo = QComboBox()
+            for value in values:
+                combo.addItem(value, value)
+            combo.setCurrentIndex(max(0, combo.findData(getattr(options, name))))
+            form.addRow(title, combo)
+            self.combos[name] = combo
+        self.allow_fallback = QCheckBox('Cho phép gửi OCR Online khi chọn Auto Fallback')
+        self.allow_fallback.setChecked(options.allow_online_fallback)
+        form.addRow('Nâng cao — không tự bật', self.allow_fallback)
         self.agy_executable = QLineEdit(options.agy_executable)
         self.agy_executable.setPlaceholderText('Trống: tìm AGY đã cài; không thay PATH hệ thống')
         form.addRow('AGY executable (.exe)', self.agy_executable)
@@ -70,12 +88,15 @@ class SettingsDialog(QDialog):
         form.addRow('AGY Gemini model slug', self.agy_model)
         self.gemini_api_model = QLineEdit(options.gemini_api_model)
         self.gemini_api_model.setReadOnly(True)
-        form.addRow('Gemini API model (không tự chuyển)', self.gemini_api_model)
-        self.gemini_api_free = QCheckBox('Tôi đã kiểm tra project của GEMINI_API_KEY là Free tier, không gắn billing')
+        api_form.addRow('Model (không tự chuyển)', self.gemini_api_model)
+        self.gemini_api_free = QCheckBox('Đã kiểm tra project Free tier, không gắn billing')
         self.gemini_api_free.setChecked(options.gemini_api_free_tier_confirmed)
-        form.addRow('Gemini API — chỉ dùng miễn phí', self.gemini_api_free)
-        form.addRow(QLabel('Key chỉ lấy từ GEMINI_API_KEY của tiến trình. Không nhập/lưu key trong ứng dụng.\n'
-                          'Có key chưa chứng minh model khả dụng hoặc project Free. Không gọi API để kiểm tra khi mở.'))
+        api_form.addRow(self.gemini_api_free)
+        api_note = QLabel('Kiểm tra project của key tại <a href="https://aistudio.google.com/api-keys">Google AI Studio</a> trước khi xác nhận. '
+                          'Key lấy từ GEMINI_API_KEY; có key chưa chứng minh quyền model hoặc Free tier. Không tự kiểm tra mạng/billing.')
+        api_note.setWordWrap(True)
+        api_note.setOpenExternalLinks(True)
+        api_form.addRow(api_note)
         for title, name, low, high in [('Timeout AGY (giây)', 'agy_timeout', 10, 300),
                                       ('Lượt AGY tối đa/job', 'agy_max_requests', 1, 128),
                                       ('Timeout Gemini API (giây)', 'gemini_api_timeout', 10, 300),
@@ -90,27 +111,29 @@ class SettingsDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(form_widget)
-        scroll.setMinimumHeight(260)
+        scroll.setMinimumHeight(120)
         outer.addWidget(scroll, 1)
         self.diagnostic_text = QCheckBox('Lưu văn bản OCR/bản dịch bị lỗi trong diagnostic cục bộ (giới hạn độ dài)')
         self.diagnostic_text.setChecked(options.diagnostic_text)
-        outer.addWidget(self.diagnostic_text)
+        form.addRow(self.diagnostic_text)
         self.agy_context = QCheckBox('AGY / Gemini API: mang theo tối đa1600ký tự ngữ cảnh đã qua validation')
         self.agy_context.setChecked(options.agy_context)
-        outer.addWidget(self.agy_context)
+        form.addRow(self.agy_context)
         note = QLabel('MyMemory API ẩn danh: 5.000 ký tự/ngày, tối đa 500 byte/request.\n'
                       'Online Free gửi OCR ra ngoài; MyMemory có thể lưu và chia sẻ với đối tác MT.\n'
                       'Chỉ dùng endpoint LibreTranslate bạn có quyền sử dụng miễn phí. Không nhập API key.\n'
                       'Thuật ngữ/tên riêng: mỗi dòng là chữ gốc = tiếng Việt. Marker phải được provider giữ nguyên.')
         note.setWordWrap(True)
-        outer.addWidget(note)
+        form.addRow(note)
         self.glossary = QPlainTextEdit('\n'.join(f'{k} = {v}' for k, v in options.glossary.items()))
         self.glossary.setMaximumHeight(120)
-        outer.addWidget(self.glossary)
+        form.addRow(self.glossary)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
+        if focus_section == 'gemini_api':
+            self.gemini_api_free.setFocus()
 
     def choose_font(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, 'Chọn font hỗ trợ tiếng Việt', self.font.text(), 'Font (*.ttf *.otf)')
@@ -146,6 +169,7 @@ class SettingsDialog(QDialog):
         self.options.agy_executable = self.agy_executable.text().strip()
         self.options.agy_model = model
         self.options.gemini_api_free_tier_confirmed = self.gemini_api_free.isChecked()
+        self.options.allow_online_fallback = self.allow_fallback.isChecked()
         for name, combo in self.combos.items():
             setattr(self.options, name, combo.currentData())
         self.options.font = self.font.text().strip()

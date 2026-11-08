@@ -7,7 +7,8 @@ from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout,
     QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+    QProgressBar, QPushButton, QScrollArea, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QToolButton, QMenu, QSizePolicy)
 
 from core.paths import CONFIG, ROOT
 from core.storage import TranslationCache, load_options, save_options
@@ -15,6 +16,7 @@ from core.types import Options
 from providers.agy import MODE as AGY_MODE
 from providers.gemini_api import MODE as GEMINI_API_MODE, key_available
 from ui.provider_notice import gemini_usage_text
+from core.provider_preflight import check_configuration
 from ui.models_dialog import ModelManagerDialog
 from ui.preview import PreviewDialog
 from ui.settings_dialog import SettingsDialog
@@ -37,6 +39,9 @@ class MainWindow(QMainWindow):
         self.font_report = configure_ui_font()
         self.setWindowTitle('IMAGE TRANSLATOR VN')
         self.resize(1180, 850)
+        screen = self.screen().availableGeometry()
+        self.resize(min(1100, screen.width()-40), min(760, screen.height()-60))
+        self.ui_job_state = 'IDLE'
         self.options = load_options()
         if not self.options.output:
             self.options.output = str(ROOT / 'output')
@@ -63,13 +68,13 @@ class MainWindow(QMainWindow):
         scroll.setWidget(central)
         self.setCentralWidget(scroll)
         outer = QVBoxLayout(central)
-        outer.setSpacing(12)
+        outer.setSpacing(6)
         title = QLabel('IMAGE TRANSLATOR VN')
         title.setObjectName('title')
         outer.addWidget(title)
         subtitle = QLabel('OCR • Dịch sang tiếng Việt • Phục hồi nền • Xuất ảnh   |   CPU • Miễn phí')
         subtitle.setObjectName('subtitle')
-        outer.addWidget(subtitle)
+        subtitle.hide()
         self.source_tabs = QTabWidget()
         self.folder_page = QWidget()
         folder_layout = QVBoxLayout(self.folder_page)
@@ -121,7 +126,9 @@ class MainWindow(QMainWindow):
         self.mode.setCurrentText('Online Free' if self.options.mode == 'Online' else self.options.mode)
         self.mode.setItemData(0, 'Offline — Argos Translate / model cục bộ', Qt.ToolTipRole)
         self.mode.setItemData(1, 'Online Free — MyMemory Machine Translation API', Qt.ToolTipRole)
-        row.addWidget(self.mode)
+        self.mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.mode.setMinimumContentsLength(10)
+        row.addWidget(self.mode, 1)
         self.online_provider = QComboBox()
         self.online_provider.addItems(['MyMemory', 'LibreTranslate'])
         self.online_provider.setCurrentText(self.options.online_provider)
@@ -131,14 +138,20 @@ class MainWindow(QMainWindow):
                                         'Chưa có model sẽ báo lỗi, không tự tải.', Qt.ToolTipRole)
         self.offline_provider.setCurrentText(self.options.offline_provider)
         self.online_label = QLabel('Online')
-        row.addWidget(self.online_label)
-        row.addWidget(self.online_provider)
-        row.addWidget(QLabel('Offline'))
-        row.addWidget(self.offline_provider)
+        for widget in (self.online_label, self.online_provider, self.offline_provider):
+            widget.setParent(self.config_panel)
+            widget.hide()  # Compatibility state; edited in Settings, never silently changed.
+        self.provider_info = QLabel()
+        self.provider_info.setWordWrap(True)
+        self.provider_info.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        row.addWidget(self.provider_info, 1)
+        self.settings_button = QPushButton('Cài đặt')
+        row.addWidget(self.settings_button)
         config.addLayout(row)
         self.allow_fallback = QCheckBox('Tôi đồng ý gửi văn bản OCR tới provider Online miễn phí nếu Offline lỗi (chỉ Auto Fallback)')
         self.allow_fallback.setChecked(self.options.allow_online_fallback)
-        config.addWidget(self.allow_fallback)
+        self.allow_fallback.setParent(self.config_panel)
+        self.allow_fallback.hide()
         self.privacy = QLabel()
         self.privacy.setWordWrap(True)
         config.addWidget(self.privacy)
@@ -147,6 +160,7 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.config_panel)
         from ui.provider_notice import ProviderNotice
         self.provider_notice = ProviderNotice()
+        self.provider_notice.settingsRequested.connect(self.show_api_settings)
         outer.addWidget(self.provider_notice)
         self.resume_previous = QPushButton('Khôi phục cấu hình công việc chưa hoàn thành')
         self.resume_previous.clicked.connect(self.restore_previous)
@@ -159,31 +173,46 @@ class MainWindow(QMainWindow):
         if self.pending_journal:
             self.pending_options = Options.from_dict(self.pending_journal['options'])
             self.resume_previous.setText('Khôi phục công việc còn dở (không tự chạy)')
-        self.resume_previous.setVisible(self.pending_options is not None)
+        self.resume_previous.hide()
         controls = QGridLayout()
         controls.setSpacing(8)
         self.start_button = QPushButton('Bắt đầu dịch')
         self.start_button.setObjectName('primary')
         self.pause_button = QPushButton('Tạm dừng')
-        self.continue_button = QPushButton('Tiếp tục')
+        self.continue_button = QPushButton('Tiếp tục từ cache')
         self.cancel_button = QPushButton('Hủy')
         self.retry_button = QPushButton('Thử lại ảnh lỗi / chưa xong')
         self.open_button = QPushButton('Mở kết quả')
         self.review_button = QPushButton('Trang cần xem lại / log')
         self.review_button.setEnabled(False)
         self.review_button.clicked.connect(self.show_review)
-        folder_layout.addWidget(self.review_button)
+        self.review_button.setParent(self.folder_page)
+        self.review_button.hide()
         self.models_button = QPushButton('Quản lý mô hình AI')
-        self.settings_button = QPushButton('Cài đặt')
+        self.settings_button.setToolTip('Thiết lập Gemini API, provider nâng cao, font và xuất ảnh')
         for position, button in enumerate([self.start_button, self.pause_button, self.continue_button,
-                                          self.cancel_button, self.retry_button, self.open_button]):
-            controls.addWidget(button, position // 3, position % 3)
+                                          self.cancel_button, self.open_button]):
+            controls.addWidget(button, 0, position)
+        self.folder_more = QToolButton()
+        self.folder_more.setText('Thêm')
+        self.folder_more.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self.folder_more)
+        actions = []
+        for title_text, button in [('Thử lại ảnh lỗi', self.retry_button), ('Trang cần xem lại / log', self.review_button),
+                                  ('Khôi phục công việc đã lưu', self.resume_previous), ('Mô hình cục bộ', self.models_button)]:
+            button.setParent(self.folder_page)
+            button.hide()
+            action = menu.addAction(title_text)
+            action.triggered.connect(button.click)
+            actions.append((action, button))
+        menu.aboutToShow.connect(lambda: [a.setEnabled(b.isEnabled() and
+            (b != self.resume_previous or self.pending_options is not None)) for a,b in actions])
+        self.folder_more.setMenu(menu)
+        controls.addWidget(self.folder_more, 0, 5)
         folder_layout.addLayout(controls)
         common = QHBoxLayout()
         common.addStretch()
-        common.addWidget(self.models_button)
-        common.addWidget(self.settings_button)
-        outer.addLayout(common)
+        self.models_button.setText('Mô hình cục bộ')
         self.start_button.clicked.connect(lambda: self.start())
         self.pause_button.clicked.connect(self.pause)
         self.continue_button.clicked.connect(self.resume)
@@ -210,7 +239,7 @@ class MainWindow(QMainWindow):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.cellDoubleClicked.connect(self.inspect)
-        self.table.setMinimumHeight(230)
+        self.table.setMinimumHeight(160)
         folder_layout.addWidget(self.table, 1)
         hint = QLabel('Nhấp đúp để xem ảnh trước/sau hoặc chi tiết lỗi. Nền phức tạp và chữ dọc cần kiểm tra preview.')
         hint.setWordWrap(True)
@@ -232,6 +261,8 @@ class MainWindow(QMainWindow):
         for panel in (self.image_panel, self.url_panel):
             panel.busyChanged.connect(self.set_running)
         self.url_panel.importRequested.connect(lambda: self.source_tabs.setCurrentIndex(1))
+        for panel in (self.image_panel, self.url_panel):
+            panel.settingsRequested.connect(self.show_api_settings)
         outer.addWidget(self.source_tabs, 1)
         self.set_running(False)
         self.setStyleSheet('''
@@ -239,17 +270,17 @@ class MainWindow(QMainWindow):
             QWidget { font-size: 12px; color: #e5e7eb; }
             QGroupBox { border: 1px solid #374151; border-radius: 8px; margin-top: 14px; padding: 14px 8px 8px; }
             QGroupBox::title { subcontrol-origin: margin; left: 12px; }
-            QLabel#title { font-size: 27px; font-weight: 700; color: #60a5fa; }
+            QLabel#title { font-size: 20px; font-weight: 700; color: #60a5fa; }
             QLabel#subtitle { color: #9ca3af; padding-bottom: 10px; }
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit { background: #1f2937; border: 1px solid #4b5563; border-radius: 4px; padding: 6px; }
             QComboBox QAbstractItemView { background: #1f2937; selection-background-color: #2563eb; }
-            QPushButton { background: #273449; border: 1px solid #475569; border-radius: 5px; padding: 9px; }
+            QPushButton, QToolButton { background: #273449; border: 1px solid #475569; border-radius: 5px; padding: 9px; }
             QPushButton:hover { background: #334155; }
             QPushButton#primary { background: #2563eb; font-weight: 600; }
             QPushButton:disabled { color: #6b7280; background: #1f2937; }
             QScrollArea, QScrollArea > QWidget > QWidget { background: #111827; }
             QTabWidget::pane { border: 1px solid #374151; border-radius: 7px; padding: 8px; }
-            QTabBar::tab { background: #1f2937; padding: 12px 24px; margin-right: 4px; }
+            QTabBar::tab { background: #1f2937; padding: 8px 16px; margin-right: 4px; }
             QTabBar::tab:selected { background: #2563eb; color: white; }
             QTableWidget { background: #172033; alternate-background-color: #1f2937; gridline-color: #374151; }
             QHeaderView::section { background: #273449; padding: 8px; border: 0; }
@@ -268,8 +299,8 @@ class MainWindow(QMainWindow):
     def update_mode(self, *_args) -> None:
         mode = self.mode.currentText()
         folder = True  # Translation selection is shared by all three input tabs.
-        for widget in (self.mode, self.mode_label, self.online_provider, self.online_label, self.allow_fallback):
-            widget.setVisible(folder)
+        for widget in (self.online_provider, self.online_label, self.offline_provider, self.allow_fallback):
+            widget.hide()
         self.online_provider.setEnabled(mode in ('Online', 'Online Free', 'Auto Fallback'))
         self.offline_provider.setEnabled(mode in ('Offline', 'Auto Fallback'))
         self.allow_fallback.setEnabled(folder and mode == 'Auto Fallback')
@@ -289,6 +320,31 @@ class MainWindow(QMainWindow):
             self.privacy.setText('Gemini API • ' + self.options.gemini_api_model +
                 (' • GEMINI_API_KEY: đã có (chưa kiểm tra mạng).' if key_available() else ' • Chưa có GEMINI_API_KEY.') +
                 ' Chỉ gửi OCR/context; không ảnh/tools. Kiểm tra project Free tier trong Cài đặt; không tự đổi provider.')
+        info = (self.options.gemini_api_model + (' • có key • ' if key_available() else ' • thiếu key • ') + check_configuration(self._mode_options()).code
+                if mode == GEMINI_API_MODE else self.options.agy_model if mode == AGY_MODE else
+                self.online_provider.currentText() if mode in ('Online', 'Online Free') else self.offline_provider.currentText())
+        self.provider_info.setText(info)
+        self.provider_info.setToolTip(self.privacy.text())
+        self.privacy.hide()
+        ready = check_configuration(self._mode_options()).ready
+        for owner in (self, getattr(self, 'image_panel', None), getattr(self, 'url_panel', None)):
+            notice = getattr(owner, 'provider_notice', None)
+            if ready and notice and getattr(notice, 'last_code', None) in ('API_KEY_MISSING', 'FREE_TIER_UNCONFIRMED'):
+                notice.hide()  # Retain history/pending; choosing settings never resumes.
+                owner.ui_job_state = 'READY_UNVERIFIED' if mode == GEMINI_API_MODE else 'READY'
+
+    def _mode_options(self):
+        options = Options.from_dict(self.options.to_dict())
+        options.mode = self.mode.currentText()
+        return options
+
+    def check_provider_setup(self, options):
+        result = check_configuration(options)
+        if not result.ready:
+            self.ui_job_state = 'CONFIGURATION_BLOCKED'
+            self.provider_notice.show_error(result.event())
+            self.current.setText(result.code + ' • Cần hoàn tất Cài đặt; chưa khởi chạy lượt mới.')
+        return result.ready
 
     def collect_options(self) -> Options:
         self.options.source = self.source.text().strip()
@@ -307,6 +363,8 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
         options = self.collect_options()
+        if not self.check_provider_setup(options):
+            return
         if not options.source or not options.output:
             QMessageBox.warning(self, 'Thiếu thư mục', 'Chọn thư mục nguồn và thư mục xuất trước.')
             return
@@ -347,6 +405,8 @@ class MainWindow(QMainWindow):
         self.provider_pending = []
 
     def set_running(self, running: bool) -> None:
+        if running:
+            self.ui_job_state = 'RUNNING'
         self.config_panel.setEnabled(not running)
         self.folder_inputs.setEnabled(not running)
         self.source_tabs.tabBar().setEnabled(not running)
@@ -369,9 +429,12 @@ class MainWindow(QMainWindow):
             return
         if kind == 'gemini_api_usage':
             self.privacy.setText(gemini_usage_text(event))
+            self.provider_info.setText(event['model'] + ' • token: ' + str(event.get('usage', {}).get('totalTokenCount', '?')))
+            self.provider_info.setToolTip(self.privacy.text())
             return
         if kind == 'provider_paused':
             self.provider_paused = True
+            self.ui_job_state = 'PAUSED_PROVIDER'
             self.provider_pending = list(event['pending_paths'])
             self.provider_notice.show_error(event)
             self.current.setText(event['code'] + ' • Tạm dừng; không tự chuyển provider.')
@@ -390,6 +453,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Không thể xử lý', event['detail'])
             return
         if kind == 'finished':
+            self.ui_job_state = event['state'].upper()
             if event['state'] == 'done':
                 self.resume_id = None
             elif event.get('pending_paths'):
@@ -458,6 +522,7 @@ class MainWindow(QMainWindow):
             self.pause_button.setEnabled(False)
             self.continue_button.setEnabled(True)
             self.current.setText('Đã yêu cầu tạm dừng; tác vụ hiện tại sẽ dừng ở checkpoint an toàn.')
+            self.ui_job_state = 'PAUSED_BY_USER'
 
     def resume(self) -> None:
         if self.provider_paused and (not self.worker or not self.worker.isRunning()):
@@ -517,19 +582,30 @@ class MainWindow(QMainWindow):
     def show_comic_sources(self) -> None:
         self.source_tabs.setCurrentIndex(2)
 
-    def show_settings(self) -> None:
+    def show_api_settings(self):
+        self.show_settings('gemini_api')
+
+    def show_settings(self, focus_section=None) -> None:
         self.collect_options()
-        if SettingsDialog(self.options, self).exec():
+        if SettingsDialog(self.options, self, focus_section=focus_section).exec():
+            self.online_provider.setCurrentText(self.options.online_provider)
+            self.offline_provider.setCurrentText(self.options.offline_provider)
+            self.allow_fallback.setChecked(self.options.allow_online_fallback)
             if self.persist_settings:
                 save_options(self.options)
             self.update_mode()
 
     def restore_previous(self) -> None:
         if self.pending_options:
+            from core.resume import PROVIDER_FIELDS
+            selected = self.collect_options()
+            restored = Options.from_dict(self.pending_options.to_dict())
+            for name in PROVIDER_FIELDS:
+                setattr(restored, name, getattr(selected, name))
             if self.persist_settings:
-                save_options(self.pending_options)
+                save_options(restored)
             # Reconstruct widget state in-place without starting a second window.
-            p = self.pending_options
+            p = restored
             self.options = Options.from_dict(p.to_dict())
             self.source.setText(p.source)
             self.output.setText(p.output)

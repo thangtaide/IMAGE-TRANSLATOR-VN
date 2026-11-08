@@ -594,11 +594,18 @@ class ProcessingManager:
                     if self.options.mode == AGY_MODE:
                         from providers.agy_diagnostics import transport
                         record['agy_protocol'] = getattr(exc, 'agy_diagnostic', None) or transport(exc.code)
+                    if getattr(exc, 'phase', None) == 'provider_preflight':
+                        record.update(preflight_phase=exc.phase, request_sent=False, request_scope='current_batch')
+                        for key in ('ocr_source_text', 'raw_translated_target', 'source_numeric_tokens', 'target_numeric_tokens'):
+                            record.pop(key, None)
                     log_path = self.diagnostics.write(record)
                     self.cache.checkpoint(self.job_id, str(path), 'paused_provider',
                                           fingerprint=fingerprint, detail=exc.code)
                     self.emit(dict(type='provider_paused', code=exc.code, file=str(path),
                         detail=str(exc), retry_after=exc.retry_after, diagnostic_path=log_path,
+                        phase=getattr(exc, 'phase', None), request_sent=getattr(exc, 'request_sent', None),
+                        request_scope=getattr(exc, 'request_scope', None),
+                        image_index=image_indices[str(path)], provider=self.service.last_attempt.get('provider'),
                         pending_paths=pending_paths))
                     state = 'paused_provider'
                     break

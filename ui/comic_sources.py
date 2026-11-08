@@ -7,11 +7,11 @@ import time
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Qt, QUrl, Signal
+from PySide6.QtCore import QThread, Qt, QUrl, Signal, QSignalBlocker
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog,
     QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget)
+    QTableWidgetItem, QVBoxLayout, QWidget, QGroupBox, QToolButton, QMenu, QSizePolicy)
 
 from core.paths import CACHE, CONFIG, ROOT
 from core.pipeline import JobControl
@@ -115,6 +115,7 @@ class ComicSourceWorker(QThread):
 class ComicSourcesPanel(QWidget):
     busyChanged = Signal(bool)
     importRequested = Signal()
+    settingsRequested = Signal()
 
     def __init__(self, options: Options, parent=None, settings_path: Path | None = None,
                  database: Path | None = None, fixed_kind: int | None = None, options_factory=None):
@@ -155,6 +156,8 @@ class ComicSourcesPanel(QWidget):
         except (OSError, ValueError):
             saved = {}
         layout = QVBoxLayout(self)
+        layout.setSpacing(6)
+        self.ui_job_state = 'IDLE'
         self.inputs = QWidget()
         inputs = QVBoxLayout(self.inputs)
         inputs.setContentsMargins(0, 0, 0, 0)
@@ -171,11 +174,23 @@ class ComicSourcesPanel(QWidget):
         row.addWidget(self.browse)
         row.addWidget(self.analyze)
         inputs.addLayout(row)
+        self.advanced = QToolButton()
+        self.advanced.setText('Tùy chọn nguồn / cache')
+        self.advanced.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.advanced.setArrowType(Qt.RightArrow)
+        self.advanced.setCheckable(True)
+        self.advanced.setChecked(False)
+        self.advanced_body = QWidget()
+        advanced = QVBoxLayout(self.advanced_body)
+        advanced.setContentsMargins(0, 0, 0, 0)
+        self.advanced_body.hide()
+        self.advanced.toggled.connect(self.advanced_body.setVisible)
+        self.advanced.toggled.connect(lambda opened: self.advanced.setArrowType(Qt.DownArrow if opened else Qt.RightArrow))
         self.import_local = QPushButton('Nhập chương từ ảnh đã lưu hợp lệ')
-        inputs.addWidget(self.import_local)
+        advanced.addWidget(self.import_local)
         self.policy = QLabel('Ảnh gốc luôn được giữ nguyên. Phương thức dịch lấy từ cửa sổ chính; không tự tải model.')
         self.policy.setWordWrap(True)
-        inputs.addWidget(self.policy)
+        advanced.addWidget(self.policy)
         self.title = QLabel('Chưa chọn truyện. Chương không được tự động chọn.')
         self.title.setWordWrap(True)
         inputs.addWidget(self.title)
@@ -185,34 +200,62 @@ class ComicSourcesPanel(QWidget):
         self.output_browse = QPushButton('Chọn thư mục kết quả')
         output_row.addWidget(self.output, 1)
         output_row.addWidget(self.output_browse)
-        inputs.addLayout(output_row)
+        self.output_group = QToolButton()
+        self.output_group.setText('Thư mục xuất')
+        self.output_group.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.output_group.setArrowType(Qt.RightArrow)
+        self.output_group.setCheckable(True)
+        self.output_group.setChecked(False)
+        self.output_body = QWidget()
+        self.output_body.setLayout(output_row)
+        self.output_group.toggled.connect(self.output_body.setVisible)
+        self.output_group.toggled.connect(lambda opened: self.output_group.setArrowType(Qt.DownArrow if opened else Qt.RightArrow))
+        self.output_body.hide()
+        inputs.addWidget(self.output_group)
+        inputs.addWidget(self.output_body)
         self.keep = QCheckBox('Giữ bản sao ảnh nguồn trong cache sau khi xuất thành công')
         self.keep.setChecked(saved.get('keep_cached', True))
-        inputs.addWidget(self.keep)
+        advanced.addWidget(self.keep)
         self.configuration = QLabel(f'OCR: {options.language} • Offline: {options.offline_provider} • '
                                     'Dùng cấu hình font/xuất ảnh của cửa sổ chính.')
-        inputs.addWidget(self.configuration)
+        advanced.addWidget(self.configuration)
+        inputs.addWidget(self.advanced)
+        inputs.addWidget(self.advanced_body)
         from ui.provider_notice import ProviderNotice
         self.provider_notice = ProviderNotice()
-        inputs.addWidget(self.provider_notice)
+        self.provider_notice.settingsRequested.connect(self.settingsRequested)
+        layout.addWidget(self.provider_notice)
         selection = QHBoxLayout()
-        self.select_all = QPushButton('Chọn tất cả chương có thể xử lý')
+        self.select_all = QPushButton('Chọn tất cả')
         self.select_none = QPushButton('Bỏ chọn tất cả')
         self.retry_analysis = QPushButton('Thử lại danh sách chương')
         self.analyze_images = QPushButton('Phân tích ảnh chương')
         selection.addWidget(self.select_all)
         selection.addWidget(self.select_none)
-        selection.addWidget(self.retry_analysis)
-        selection.addWidget(self.analyze_images)
+        advanced.addWidget(self.retry_analysis)
+        advanced.addWidget(self.analyze_images)
+        self.technical_columns = QCheckBox('Hiện cột truy cập / số ảnh / điều kiện tải')
+        advanced.addWidget(self.technical_columns)
+        self.technical_columns.toggled.connect(self.set_technical_columns)
+        self.chapter_detail = QLabel('Chọn một dòng để xem quyền truy cập, số ảnh và điều kiện tải.')
+        self.chapter_detail.setWordWrap(True)
+        self.chapter_detail.setTextFormat(Qt.PlainText)
+        advanced.addWidget(self.chapter_detail)
         inputs.addLayout(selection)
         layout.addWidget(self.inputs)
         self.table = QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(['Chọn', 'Thứ tự', 'Tên chương', 'Truy cập chương', 'Ảnh xác minh', 'Trạng thái / lỗi', 'Điều kiện tải'])
-        self.table.setMinimumHeight(230)
+        self.table.setMinimumHeight(160)
         self.table.setAlternatingRowColors(True)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.currentCellChanged.connect(self.show_chapter_detail)
+        self.table.itemChanged.connect(self.update_chapter_tooltip)
         layout.addWidget(self.table, 1)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
@@ -230,28 +273,51 @@ class ComicSourcesPanel(QWidget):
         self.download.setEnabled(False)
         self.download.setToolTip('Kuaikan: quyền tải tự động chưa xác minh; không có downloader được kích hoạt.')
         self.pause = QPushButton('Tạm dừng')
-        self.resume = QPushButton('Tiếp tục')
+        self.resume = QPushButton('Tiếp tục từ cache')
         self.cancel = QPushButton('Hủy')
         self.retry = QPushButton('Thử lại chương lỗi / chưa xong')
         self.open_output = QPushButton('Mở kết quả')
         self.restore_cached = QPushButton('Tiếp tục công việc đã lưu (ưu tiên cache)')
         self.restore_cached.setToolTip('Chỉ chạy khi bấm. Giữ ảnh cache hợp lệ; chương chưa tải sẽ được xác minh lại quyền truy cập và policy trước khi tải.')
         self.restore_cached.clicked.connect(self.restore_cached_job)
-        controls.addWidget(self.restore_cached, 2, 0, 1, 4)
+        self.restore_cached.setParent(self)
+        self.restore_cached.hide()
         from core.resume import ResumeStore
         self.resume_store = ResumeStore(database or CACHE / 'online_comics/pipeline.sqlite3')
         self.restorable = self.resume_store.latest('source')
-        self.restore_cached.setVisible(bool(self.restorable))
+        self.restore_cached.hide()
         self.review_button = QPushButton('Trang cần xem lại / log')
         self.review_button.setEnabled(False)
         self.review_button.clicked.connect(self.show_review)
-        layout.addWidget(self.review_button)
+        self.review_button.setParent(self)
+        self.review_button.hide()
         controls.addWidget(self.start, 0, 0)
         controls.addWidget(self.download, 0, 0)
-        controls.addWidget(self.open_output, 0, 1, 1, 3)
-        for column, button in enumerate((self.pause, self.resume, self.cancel, self.retry)):
-            controls.addWidget(button, 1, column)
+        controls.addWidget(self.open_output, 0, 4)
+        for column, button in enumerate((self.pause, self.resume, self.cancel), 1):
+            controls.addWidget(button, 0, column)
+        self.retry.setParent(self)
+        self.retry.hide()
+        self.more = QToolButton()
+        self.more.setText('Thêm')
+        self.more.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self.more)
+        self.extra_actions = []
+        for label, button in [('Khôi phục công việc đã lưu', self.restore_cached),
+                              ('Thử lại chương lỗi', self.retry), ('Trang cần xem lại / log', self.review_button)]:
+            action = menu.addAction(label)
+            action.triggered.connect(button.click)
+            self.extra_actions.append((action, button))
+        menu.aboutToShow.connect(lambda: [a.setEnabled(b.isEnabled() and
+            (b != self.restore_cached or bool(self.restorable))) for a, b in self.extra_actions])
+        self.more.setMenu(menu)
+        controls.addWidget(self.more, 0, 5)
         layout.addLayout(controls)
+        # Keep primary actions ahead of the potentially long table on small screens.
+        layout.removeItem(controls)
+        layout.insertLayout(layout.indexOf(self.table), controls)
+        layout.removeWidget(self.progress)
+        layout.insertWidget(layout.indexOf(self.table), self.progress)
         self.kind.currentIndexChanged.connect(self.source_changed)
         self.location.textChanged.connect(self.invalidate_collection)
         self.browse.clicked.connect(self.choose_source)
@@ -302,7 +368,7 @@ class ComicSourcesPanel(QWidget):
         if hasattr(self, 'resume_store'):
             self.restorable = self.resume_store.latest('source', lambda data:
                 (data.get('comic', {}).get('site_id') != 'local') == online)
-            self.restore_cached.setVisible(bool(self.restorable))
+            self.restore_cached.hide()
         single = self.kind.currentIndex() == 0
         if clear:
             self.invalidate_collection()
@@ -321,10 +387,8 @@ class ComicSourcesPanel(QWidget):
         self.download_status.setVisible(online)
         self.start.setVisible(not online)
         self.title.setVisible(self.kind.currentIndex() != 0)
-        for column in (1, 3, 4):
-            self.table.setColumnHidden(column, self.kind.currentIndex() == 0)
-        self.table.setColumnHidden(6, not online)
-        self.select_all.setText('Chọn tất cả chương' if online else 'Chọn tất cả ảnh' if single else 'Chọn tất cả ảnh/chương')
+        self.set_technical_columns(self.technical_columns.isChecked())
+        self.select_all.setText('Chọn tất cả')
         self.table.horizontalHeaderItem(2).setText('Ảnh đã chọn' if single else 'Tên chương')
         self.retry.setText('Thử lại ảnh lỗi / chưa xong' if single else 'Thử lại chương lỗi / chưa xong')
         self.start.setText('Bắt đầu dịch')
@@ -417,11 +481,47 @@ class ComicSourcesPanel(QWidget):
         elif decisions and all(d and d.allowed for d in decisions) and not capability:
             reason = 'Quyết định ứng dụng cho phép nhưng adapter chưa có downloader tương thích.'
         self.download_status.setText(reason)
+        self.download_status.setToolTip(reason)
         self.download.setToolTip(reason)
         self.retry_analysis.setEnabled(not self.busy and bool(self.comic))
         self.analyze_images.setEnabled(not self.busy and online and bool(selected) and self.adapter is not None)
         self.retry.setEnabled(not self.busy and bool(self.failed_ids))
         self.restore_cached.setEnabled(not self.busy)
+
+    def set_technical_columns(self, checked):
+        if not hasattr(self, 'table'):
+            return
+        for column in (3, 4, 6):
+            self.table.setColumnHidden(column, not checked)
+        self.table.setColumnHidden(1, self.kind.currentIndex() == 0)
+
+    def show_chapter_detail(self, row, *_):
+        if row < 0:
+            return
+        values = [(self.table.horizontalHeaderItem(c).text(), self.table.item(row, c)) for c in (2, 3, 4, 6)]
+        text = '\n'.join(label + ': ' + item.text() for label, item in values if item)
+        self.chapter_detail.setText(text)
+
+    def update_chapter_tooltip(self, item):
+        row = item.row()
+        title = self.table.item(row, 2)
+        if title is None:
+            return
+        text = '\n'.join(self.table.item(row, c).text() for c in (2, 3, 4, 6) if self.table.item(row, c))
+        with QSignalBlocker(self.table):
+            title.setToolTip(text)
+        if self.table.currentRow() == row:
+            self.show_chapter_detail(row)
+
+    def check_provider_setup(self):
+        from core.provider_preflight import check_configuration
+        self.options = self.options_factory() if self.options_factory else self.options
+        result = check_configuration(self.options)
+        if not result.ready:
+            self.ui_job_state = 'CONFIGURATION_BLOCKED'
+            self.provider_notice.show_error(result.event())
+            self.status.setText(result.code + ' • Mở Cài đặt để hoàn tất thiết lập; chưa khởi chạy lượt mới.')
+        return result.ready
 
     def set_busy(self, busy):
         self.busy = busy
@@ -446,7 +546,10 @@ class ComicSourcesPanel(QWidget):
             return
         if self.options_factory:
             self.options = self.options_factory()
+        if not self.check_provider_setup():
+            return
         self.provider_paused = False
+        self.ui_job_state = 'RUNNING'
         self.paused_chapter = None
         self.provider_notice.hide()
         self.failed_ids = {chapter.chapter_id for chapter in chapters}
@@ -475,10 +578,12 @@ class ComicSourcesPanel(QWidget):
             return
         count = self.comic.chapter_count
         image_label = 'ảnh cục bộ' if self.comic.site_id == 'local' else 'URL ảnh đã phát hiện'
-        self.title.setText(f'{self.comic.title or "Truyện gốc chưa xác minh"} • Nguồn: {self.comic.site_id} • '
+        self.title.setToolTip(f'{self.comic.title or "Truyện gốc chưa xác minh"} • Nguồn: {self.comic.site_id} • '
                            f'Tác giả: {self.comic.author or "chưa xác định"} • '
                            f'Số nội dung công bố: {count if count is not None else "chưa xác định"} • '
                            f'Đã lấy: {len(self.chapters)} chương, {sum(c.image_count or 0 for c in self.chapters)} {image_label}')
+        self.title.setText(f'{self.comic.title or "Truyện gốc chưa xác minh"} • {len(self.chapters)} mục • '
+                           f'{sum(c.image_count or 0 for c in self.chapters)} {image_label} • {self.comic.site_id}')
 
     def handle_event(self, event):
         kind = event.get('type')
@@ -587,6 +692,7 @@ class ComicSourcesPanel(QWidget):
                                 f"{review['error_message']}\n{review.get('diagnostic_path') or review.get('diagnostic_error')}")
         elif kind == 'pipeline' and event.get('pipeline_event_type') == 'provider_paused':
             self.provider_paused = True
+            self.ui_job_state = 'PAUSED_PROVIDER'
             self.paused_chapter = chapter_id
             self.provider_notice.show_error(event)
             self.status.setText(event['code'] + ' • Tạm dừng; không chuyển provider tự động.')
@@ -637,10 +743,11 @@ class ComicSourcesPanel(QWidget):
         elif kind == 'job_finished':
             self.last_result = event
             if event['state'] == 'paused_provider':
-                self.status.setText('Tạm dừng dịch. Đổi phương thức nếu muốn rồi Tiếp tục chương hiện tại từ cache. '
+                self.status.setText(getattr(self.provider_notice, 'last_code', 'PAUSED_PROVIDER') + ' • Xem hướng dẫn trong thông báo. '
                     'Chương chưa bắt đầu được giữ trong lựa chọn, không tự tải tiếp.')
                 return
             self.review_pages = event.get('review_pages', self.review_pages)
+            self.ui_job_state = event['state'].upper()
             self.review_button.setEnabled(bool(self.review_pages))
             self.processing_state = {'done': ProcessingState.COMPLETED, 'cancelled': ProcessingState.CANCELLED}.get(event['state'], ProcessingState.FAILED)
             if event['state'] == 'done':
@@ -667,6 +774,7 @@ class ComicSourcesPanel(QWidget):
             self.pause.setEnabled(False)
             self.resume.setEnabled(True)
             self.status.setText('Đã yêu cầu tạm dừng tại checkpoint an toàn.')
+            self.ui_job_state = 'PAUSED_BY_USER'
 
     def restore_cached_job(self):
         if self.busy:
@@ -674,6 +782,8 @@ class ComicSourcesPanel(QWidget):
         record = self.resume_store.read(self.source_resume_id) if self.source_resume_id else self.restorable
         if not record:
             self.status.setText('Không có journal nguồn để khôi phục.')
+            return
+        if not self.check_provider_setup():
             return
         self.options = self.options_factory() if self.options_factory else self.options
         self.output.setText(record['output'])

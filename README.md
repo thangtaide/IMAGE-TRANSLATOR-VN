@@ -1,5 +1,20 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3D.1 — thiết lập Gemini API và giao diện gọn
+
+Thanh cấu hình chung còn OCR, phương thức dịch, model/provider và Cài đặt.
+Provider phụ/Auto Fallback consent ở Cài đặt; không tự đổi lựa chọn đã lưu.
+Bảng chương mặc định4cột; bật Tùy chọn nguồn/cache để xem thêm. Thư mục xuất
+thu gọn, các thao tác ít dùng ở menu Thêm. Ở cửa sổ nhỏ/high DPI, cuộn để xem
+đủ nội dung; các nút tải/dịch nằm trước bảng chương.
+
+`FREE_TIER_UNCONFIRMED` là thiếu xác nhận cấu hình, không phải Gemini đã dịch
+thất bại. Bấm **Mở Cài đặt Gemini API**, tự kiểm tra project ở Google AI Studio,
+chỉ xác nhận Free tier/không billing khi đúng. Sau đó chủ động Bắt đầu/Tiếp tục
+từ cache; không tự gửi request hoặc tiếp tục khi đóng thông báo/đổi cài đặt.
+Đủ cấu hình chỉ là `READY_UNVERIFIED`, chưa xác minh key/model/quota trên mạng.
+Không build EXE; xem [báo cáo Stage3D.1](docs/STAGE3D1_API_PREFLIGHT_COMPACT_UI_REPORT.md).
+
 ## Stage3D — Gemini API chính thức (bản source)
 
 Bổ sung **AI Gemini API**, giữ nguyên Offline Argos (mặc định), Online Free

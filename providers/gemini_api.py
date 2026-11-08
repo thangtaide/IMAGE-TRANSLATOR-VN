@@ -61,7 +61,8 @@ class GeminiAPIProvider(TranslationProvider):
     def fail(self, code, *, status=None, retry_after=None):
         messages = {
             'FREE_TIER_UNCONFIRMED': 'Chỉ gửi khi bạn đã kiểm tra dự án của key là Free tier, không bật billing.',
-            'AUTH_REQUIRED': 'Thiếu hoặc không hợp lệ GEMINI_API_KEY; không ghi key vào cài đặt.',
+            'AUTH_REQUIRED': 'Gemini API từ chối xác thực (HTTP 401); không ghi key vào cài đặt.',
+            'API_KEY_MISSING': 'Chưa có GEMINI_API_KEY trong môi trường; chưa gửi request của batch này.',
             'ACCESS_DENIED': 'Gemini API từ chối quyền truy cập (403); kiểm tra key/dự án/khu vực.',
             'MODEL_UNAVAILABLE': 'Model Gemini không khả dụng cho dự án; không tự chuyển model.',
             'INVALID_REQUEST': 'Gemini API từ chối request (400/cấu hình); xem tài liệu cấu hình.',
@@ -76,6 +77,10 @@ class GeminiAPIProvider(TranslationProvider):
             'RESPONSE_BLOCKED': 'Gemini API không hoàn tất phản hồi an toàn; giữ pending.',
         }
         self.blocked = ProviderSuspended(code, messages[code], status=status, retry_after=retry_after)
+        if status is None and code in ('FREE_TIER_UNCONFIRMED', 'API_KEY_MISSING', 'INVALID_REQUEST'):
+            self.blocked.phase = 'provider_preflight'
+            self.blocked.request_sent = False
+            self.blocked.request_scope = 'current_batch'
         raise self.blocked from None
 
     def translate(self, text, source, target='vi'):
@@ -112,11 +117,13 @@ class GeminiAPIProvider(TranslationProvider):
                         'responseJsonSchema': schema}}
         if len(json.dumps(payload, ensure_ascii=False).encode('utf-8')) > 131072:
             self.fail('INVALID_REQUEST')
+        key = os.environ.get('GEMINI_API_KEY', '').strip()
+        if not key:
+            self.fail('API_KEY_MISSING')
+        if len(key) > 256 or any(ord(c) < 33 or ord(c) > 126 for c in key):
+            self.fail('INVALID_REQUEST')
         if not self.free_tier_confirmed:
             self.fail('FREE_TIER_UNCONFIRMED')
-        key = os.environ.get('GEMINI_API_KEY', '').strip()
-        if not key or len(key) > 256 or any(ord(c) < 33 or ord(c) > 126 for c in key):
-            self.fail('AUTH_REQUIRED')
         if self.requests >= self.max_requests:
             self.fail('REQUEST_BUDGET')
         self.requests += 1

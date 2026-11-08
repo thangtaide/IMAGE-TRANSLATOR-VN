@@ -87,7 +87,7 @@ class GeminiAPITests(unittest.TestCase):
         with patch.dict(os.environ, {'GEMINI_API_KEY': ''}):
             self.assertFalse(key_available())
             with self.assertRaises(ProviderSuspended) as exc: self.provider().translate('你好', 'zh')
-        self.assertEqual(exc.exception.code, 'AUTH_REQUIRED'); self.assertFalse(self.http.calls)
+        self.assertEqual(exc.exception.code, 'API_KEY_MISSING'); self.assertFalse(self.http.calls)
         self.assertNotIn(CANARY, json.dumps(Options().to_dict()))
 
     def test_model_does_not_silently_switch(self):
@@ -351,7 +351,9 @@ class GeminiPipelineTests(unittest.TestCase):
         from ui.main_window import MainWindow
         from ui.settings_dialog import SettingsDialog
         app=QApplication.instance() or QApplication([])
-        window=MainWindow(cache_path=self.root/'gui.sqlite3',persist_settings=False)
+        # Test the new-install default, independent of the user's saved selection.
+        with patch('ui.main_window.load_options',return_value=Options()):
+            window=MainWindow(cache_path=self.root/'gui.sqlite3',persist_settings=False)
         with patch('requests.Session.post',side_effect=AssertionError('GUI must not request')):
             self.assertEqual(window.mode.currentText(),'Offline')
             for mode in ['Offline','Online Free','AI Gemini AGY',MODE]:

@@ -1,5 +1,36 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3D.1 — phân biệt preflight với lỗi dịch
+
+| Trạng thái | Đã xác minh / cách xử lý |
+|---|---|
+| API_KEY_MISSING | Không thấy key trong môi trường; không phải HTTP401. Đặt GEMINI_API_KEY rồi mở lại app, không gửi key trong log. |
+| FREE_TIER_UNCONFIRMED | Flag cấu hình false. Bấm Mở Cài đặt Gemini API, tự kiểm tra project ở AI Studio, xác nhận chỉ khi đúng rồi chủ động tiếp tục. |
+| READY_UNVERIFIED | Đủ key presence/xác nhận cục bộ; chưa xác minh mạng, billing, quyền model hoặc quota. |
+| PAUSED_BY_USER | Người dùng bấm Pause; worker dừng tại checkpoint, không tự đổi phương thức. |
+| AUTH_REQUIRED / ACCESS_DENIED | Lỗi remote401/403; không gộp với thiếu thiết lập trước HTTP. |
+| INVALID_RESPONSE: Unexpected tool use (AGY) | Guard/parser AGY từ chối. Chưa đủ chứng cứ invocation thật hay metadata; không gọi là quota. Không nới guard. |
+
+Ví dụ runtime xác minh Stage3D.1: job e26eec3c…/chapter276880 bị chặn
+FREE_TIER_UNCONFIRMED tại trang1 lúc17:28:55 ngày08/11/2026. Settings và hai
+journal đều false, journal109pending/0done,35trang ocr_ready. Lần gọi gây lỗi
+đi vào nhánh trước HTTP; không thể gọi đó là Gemini dịch thất bại. Không suy
+key hợp lệ hoặc quota còn chỉ vì key đã có; không tổng quát thành mọi lần chạy
+lịch sử đều0request vì chưa có bộ đếm lịch sử đầy đủ.
+
+Thông báo mới không dùng nguyên raw detail/response để hiển thị. Bằng chứng
+`local_preflight/request_sent=false` chỉ áp dụng thao tác chưa khởi chạy worker;
+`provider_preflight/current_batch` chỉ nói batch đó dừng trước HTTP. Thiếu bằng
+chứng thì thông báo trung lập. Quota/rate/auth/timeouts vẫn giữ code riêng.
+
+Khôi phục job cũ không được lấy flag Free=false trong journal ghi đè xác nhận
+mới hoặc phương thức đang chọn. Bản sửa chỉ merge PROVIDER_FIELDS như luồng
+source resume, giữ OCR/render/receipt/recipe cũ; không migration journal.
+Nếu recipe/source/receipt không hợp lệ, tiếp tục bị chặn như trước.
+
+Các mục Stage3D dưới đây là lịch sử triển khai. Hiện ô xác nhận nằm ngay đầu
+Cài đặt, provider phụ ở phần nâng cao và các nút ít dùng nằm trong menu Thêm.
+
 ## Stage3D — Gemini API REST
 
 Key chỉ lấy từ `GEMINI_API_KEY`. Không gửi key/log chứa key cho người khác.
