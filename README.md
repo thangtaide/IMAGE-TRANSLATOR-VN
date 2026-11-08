@@ -1,5 +1,16 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3A — Online Free trong bản source
+
+Chạy `run_source.bat`, chọn **Online Free** và **MyMemory** tại cửa sổ chính
+(dùng chung3tab). Chỉ text OCR gửi tới API, không gửi ảnh. API ẩn danh miễn phí
+5.000ký tự/ngày, có retention/chia sẻ với đối tácMT; không dùng cho dữ liệu bí mật.
+Quota/rate/auth dừng an toàn với thông báo ×; không tự đổi provider. Người dùng
+có thể đổi phương thức rồi Tiếp tục phần pending trong cùng phiên. Offline vẫn
+mặc định; bốnEXE cũ chưa chứa thay đổi này. Không buildEXE hoặc tích hợp Gemini.
+Đọc [báo cáo Stage3A](docs/STAGE3A_ONLINE_FREE_TRANSLATION_REPORT.md) và
+[hướng dẫn sử dụng](docs/USER_GUIDE.md) về date rejection, resume và giới hạn.
+
 ## Hiện tại — Stage3 chỉ nghiên cứu QA, 08/11/2026
 
 Đã đánh giá150 vùng OCR thật, tách99development/51holdout; chưa có reference

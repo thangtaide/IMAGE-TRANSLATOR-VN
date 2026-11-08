@@ -1019,3 +1019,13 @@ Chạy unit + live hợp lệ + local regression; không gọi mock là live PAS
 Cập nhật registry, guide, PROJECT_STATUS và báo cáo số chương/ảnh thực tế.
 Chỉ build tên mới khi gate đạt; kiểm thử EXE nếu build, giữ bản cũ.
 ```
+## Stage3A — phương thức dịch dùng chung, 08/11/2026
+
+GUI chọn Offline/Online Free dùng chung3nguồn; acquisition website/download policy
+không đổi. Không gửi OCR tới MyMemory khi chỉ phân tích URL hoặc khi Offline.
+LocalComicJob chỉ mở Online khi mode mới Online Free được chọn rõ; legacy mode
+vẫn giữ Offline enforcement và không bật fallback. Quota pause giữ manifest và
+chỉ resume current cached chapter, không tự tải chương tiếp. Khi provider đổi,
+phần pending có recipe/job identity mới, trang cũ giữ receipt riêng. Không sửa
+parser/website access policy để giải quyết quota dịch. Gemini chưa triển khai.
+Xem STAGE3A_ONLINE_FREE_TRANSLATION_REPORT.md về giới hạn cross-restart resume.

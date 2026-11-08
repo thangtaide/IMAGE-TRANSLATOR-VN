@@ -130,6 +130,8 @@ class ComicSourcesPanel(QWidget):
         self.chapters = []
         self.failed_ids = set()
         self.last_result = None
+        self.provider_paused = False
+        self.paused_chapter = None
         self.review_pages = []
         self.busy = False
         self.position = 1
@@ -160,7 +162,7 @@ class ComicSourcesPanel(QWidget):
         inputs.addLayout(row)
         self.import_local = QPushButton('Nhập chương từ ảnh đã lưu hợp lệ')
         inputs.addWidget(self.import_local)
-        self.policy = QLabel('Ảnh gốc luôn được giữ nguyên. Chế độ chương dùng dịch Offline; không tự tải model.')
+        self.policy = QLabel('Ảnh gốc luôn được giữ nguyên. Phương thức dịch lấy từ cửa sổ chính; không tự tải model.')
         self.policy.setWordWrap(True)
         inputs.addWidget(self.policy)
         self.title = QLabel('Chưa chọn truyện. Chương không được tự động chọn.')
@@ -179,6 +181,9 @@ class ComicSourcesPanel(QWidget):
         self.configuration = QLabel(f'OCR: {options.language} • Offline: {options.offline_provider} • '
                                     'Dùng cấu hình font/xuất ảnh của cửa sổ chính.')
         inputs.addWidget(self.configuration)
+        from ui.provider_notice import ProviderNotice
+        self.provider_notice = ProviderNotice()
+        inputs.addWidget(self.provider_notice)
         selection = QHBoxLayout()
         self.select_all = QPushButton('Chọn tất cả chương có thể xử lý')
         self.select_none = QPushButton('Bỏ chọn tất cả')
@@ -402,6 +407,8 @@ class ComicSourcesPanel(QWidget):
         self.cancel.setEnabled(busy)
         self.refresh_start()
         self.busyChanged.emit(busy)
+        if not busy and self.provider_paused:
+            self.resume.setEnabled(True)
 
     def begin(self, chapters=None, retry_only=False):
         chapters = chapters or self.selected()
@@ -414,13 +421,16 @@ class ComicSourcesPanel(QWidget):
             return
         if self.options_factory:
             self.options = self.options_factory()
+        self.provider_paused = False
+        self.paused_chapter = None
+        self.provider_notice.hide()
         self.failed_ids = {chapter.chapter_id for chapter in chapters}
         self.last_result = None
         self.review_pages = []
         self.review_button.setEnabled(False)
         self.processing_state = ProcessingState.TRANSLATING
         self.progress.setValue(0)
-        self.status.setText('Đang kiểm tra nguồn/cache và model Offline...')
+        self.status.setText('Đang kiểm tra nguồn/cache và phương thức dịch đã chọn...')
         try:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             atomic_json(self.settings_path, {'local_path': '' if online else self.location.text(), 'output': self.output.text(),
@@ -547,6 +557,11 @@ class ComicSourcesPanel(QWidget):
             review = event['review']
             self.status.setText(f"DOWNLOAD_ERROR • Trang {review.get('image_index') or '?'} • "
                                 f"{review['error_message']}\n{review.get('diagnostic_path') or review.get('diagnostic_error')}")
+        elif kind == 'pipeline' and event.get('pipeline_event_type') == 'provider_paused':
+            self.provider_paused = True
+            self.paused_chapter = chapter_id
+            self.provider_notice.show_error(event)
+            self.status.setText(event['code'] + ' • Tạm dừng; không chuyển provider tự động.')
         elif kind == 'pipeline' and event.get('stage'):
             if event.get('review'):
                 self.review_pages.append(event['review'])
@@ -585,6 +600,10 @@ class ComicSourcesPanel(QWidget):
                     self.table.item(row, 6).setText(decision.state.value)
         elif kind == 'job_finished':
             self.last_result = event
+            if event['state'] == 'paused_provider':
+                self.status.setText('Tạm dừng Online Free. Đổi phương thức nếu muốn rồi Tiếp tục chương hiện tại từ cache. '
+                    'Chương chưa bắt đầu được giữ trong lựa chọn, không tự tải tiếp.')
+                return
             self.review_pages = event.get('review_pages', self.review_pages)
             self.review_button.setEnabled(bool(self.review_pages))
             self.processing_state = {'done': ProcessingState.COMPLETED, 'cancelled': ProcessingState.CANCELLED}.get(event['state'], ProcessingState.FAILED)
@@ -614,6 +633,10 @@ class ComicSourcesPanel(QWidget):
             self.status.setText('Đã yêu cầu tạm dừng tại checkpoint an toàn.')
 
     def resume_job(self):
+        if self.provider_paused and not self.busy:
+            chapters = [c for c in self.chapters if c.chapter_id == self.paused_chapter]
+            self.begin(chapters, retry_only=True)
+            return
         if self.worker:
             self.worker.control.resume()
             self.pause.setEnabled(True)

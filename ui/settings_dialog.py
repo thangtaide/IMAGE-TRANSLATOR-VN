@@ -64,7 +64,8 @@ class SettingsDialog(QDialog):
         self.diagnostic_text = QCheckBox('Lưu văn bản OCR/bản dịch bị lỗi trong diagnostic cục bộ (giới hạn độ dài)')
         self.diagnostic_text.setChecked(options.diagnostic_text)
         outer.addWidget(self.diagnostic_text)
-        note = QLabel('MyMemory miễn phí có hạn mức khoảng 5.000 ký tự/ngày/IP.\n'
+        note = QLabel('MyMemory API ẩn danh: 5.000 ký tự/ngày, tối đa 500 byte/request.\n'
+                      'Online Free gửi OCR ra ngoài; MyMemory có thể lưu và chia sẻ với đối tác MT.\n'
                       'Chỉ dùng endpoint LibreTranslate bạn có quyền sử dụng miễn phí. Không nhập API key.\n'
                       'Thuật ngữ/tên riêng: mỗi dòng là chữ gốc = tiếng Việt. Marker phải được provider giữ nguyên.')
         note.setWordWrap(True)

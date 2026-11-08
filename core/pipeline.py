@@ -22,7 +22,7 @@ from core.types import CancelledError, MissingModelError, OCRResult, Options
 from core.diagnostics import (DiagnosticLog, VALIDATOR_VERSION, safe_text,
     TRANSLATED_SUCCESS, FALLBACK_ORIGINAL, FAILED_NO_OUTPUT)
 from providers.offline import create_offline_provider
-from providers.online import LibreTranslateProvider, MyMemoryProvider, ProviderError
+from providers.online import LibreTranslateProvider, MyMemoryProvider, ProviderError, ProviderSuspended
 
 LOGGER = logging.getLogger(__name__)
 NUMBER_PATTERN = r'[+\-−－＋]?\d+(?:[.,:/%+−-]\d+)*%?'
@@ -98,9 +98,9 @@ class TranslationService:
 
     def identity(self) -> str:
         parts = ['literal-numbers-v1', self.options.mode, self.options.allow_online_fallback, self.options.glossary]
-        if self.options.mode != 'Online':
+        if self.options.mode not in ('Online', 'Online Free'):
             parts.append(self._offline().identity)
-        if self.options.mode == 'Online' or (self.options.mode == 'Auto Fallback' and self.options.allow_online_fallback):
+        if self.options.mode in ('Online', 'Online Free') or (self.options.mode == 'Auto Fallback' and self.options.allow_online_fallback):
             parts.append(self._online().identity)
         return digest(parts)
 
@@ -108,6 +108,11 @@ class TranslationService:
         # Bound anonymous API query length while retaining every character.
         chunks, current = [], ''
         for char in text:
+            if char in '\r\n':
+                if current:
+                    chunks.append(current)
+                    current = ''
+                continue
             if len((current + char).encode('utf-8')) > 450:
                 chunks.append(current)
                 current = ''
@@ -144,10 +149,14 @@ class TranslationService:
         expected_numbers = re.findall(number_pattern, protected)
         self.last_attempt['source_numeric_tokens'] = expected_numbers
         self.control.checkpoint()
-        if provider.online and isinstance(provider, MyMemoryProvider):
-            translated = ' '.join(provider.translate(chunk, language) for chunk in self._chunks(protected))
-        else:
-            translated = provider.translate(protected, language)
+        try:
+            if provider.online and isinstance(provider, MyMemoryProvider):
+                translated = ' '.join(provider.translate(chunk, language) for chunk in self._chunks(protected))
+            else:
+                translated = provider.translate(protected, language)
+        finally:
+            count = getattr(provider, 'retry_count', 0)
+            self.last_attempt['retry_count'] = count if isinstance(count, int) else 0
         self.last_attempt.update(raw_translated_target=translated,
                                  target_numeric_tokens=re.findall(number_pattern, translated or ''))
         if not translated or not translated.strip():
@@ -166,7 +175,7 @@ class TranslationService:
 
     def translate(self, text: str, language: str, context: str) -> str:
         self.last_attempt = {}
-        if self.options.mode == 'Online':
+        if self.options.mode in ('Online', 'Online Free'):
             return self._translate_using(self._online(), text, language, context)
         try:
             return self._translate_using(self._offline(), text, language, context)
@@ -257,7 +266,7 @@ class ProcessingManager:
         for reserved in ('models', 'config', 'cache', 'logs', 'ui', 'core', 'providers', 'scripts', 'tests', '.venv', 'assets'):
             if self.output.is_relative_to((ROOT / reserved).resolve()):
                 raise ValueError('Thư mục xuất trùng khu vực mã nguồn/model/cache của ứng dụng')
-        if self.options.mode not in ('Online', 'Offline', 'Auto Fallback'):
+        if self.options.mode not in ('Online', 'Online Free', 'Offline', 'Auto Fallback'):
             raise ValueError('Chế độ dịch không hợp lệ')
         if self.options.language not in ('zh', 'zt', 'ko', 'en', 'auto'):
             raise ValueError('Ngôn ngữ OCR không hợp lệ')
@@ -291,6 +300,7 @@ class ProcessingManager:
         self.started = time.monotonic()
         files = []
         errors = []
+        pending_paths = []
         state = 'interrupted'
         try:
             self.validate()
@@ -428,6 +438,23 @@ class ProcessingManager:
                     self.counts['completed'] += 1
                     self.event(path, 'Hoàn thành', 100, index+1, len(files), output=str(destination), detail='\n'.join(warnings),
                                output_status=TRANSLATED_SUCCESS, image_index=image_indices[str(path)])
+                except ProviderSuspended as exc:
+                    # No erasing, fallback publication or failure counter on quota.
+                    # Successful receipts remain immutable; retry starts at this page.
+                    pending_paths = [str(p) for p in files[index:]]
+                    record = dict(job_id=self.job_id, chapter_id=self.chapter_id,
+                        image_index=image_indices[str(path)], image_filename=path.name,
+                        stage='TRANSLATION', error_code=exc.code, error_message=str(exc),
+                        exception_type=type(exc).__name__, checkpoint_state='paused_provider',
+                        fallback_action='NONE', **self.service.last_attempt)
+                    log_path = self.diagnostics.write(record)
+                    self.cache.checkpoint(self.job_id, str(path), 'paused_provider',
+                                          fingerprint=fingerprint, detail=exc.code)
+                    self.emit(dict(type='provider_paused', code=exc.code, file=str(path),
+                        detail=str(exc), retry_after=exc.retry_after, diagnostic_path=log_path,
+                        pending_paths=pending_paths))
+                    state = 'paused_provider'
+                    break
                 except CancelledError:
                     self.cache.checkpoint(self.job_id, str(path), 'cancelled')
                     raise
@@ -463,7 +490,7 @@ class ProcessingManager:
                         raw_translated_target=attempt.get('raw_translated_target'),
                         source_numeric_tokens=attempt.get('source_numeric_tokens'),
                         target_numeric_tokens=attempt.get('target_numeric_tokens'), validator_version=VALIDATOR_VERSION,
-                        retry_count=0, fallback_action=status, output_status=status,
+                        retry_count=attempt.get('retry_count', 0), fallback_action=status, output_status=status,
                         output_path=str(output) if output else None, checkpoint_state=checkpoint,
                         fallback_error=fallback_error)
                     log_path = self.diagnostics.write(record)
@@ -480,7 +507,8 @@ class ProcessingManager:
                     self.event(path, 'Ảnh gốc dự phòng' if output else 'Lỗi', 100, index+1, len(files),
                                output=str(output) if output else None, detail=message, review=review,
                                output_status=status, image_index=image_indices[str(path)], diagnostic_path=log_path)
-            state = ('completed_with_warnings' if self.fallback_count == len(errors) else 'errors') if errors else 'done'
+            if state != 'paused_provider':
+                state = ('completed_with_warnings' if self.fallback_count == len(errors) else 'errors') if errors else 'done'
         except CancelledError:
             state = 'cancelled'
         except Exception as exc:
@@ -497,6 +525,7 @@ class ProcessingManager:
                       'failed_no_output': self.counts['failed'] - self.fallback_count,
                       'files_exported': self.counts['completed'] + self.counts['skipped'] + self.fallback_count,
                       'needs_retry': errors, 'review_pages': self.review_pages, 'job_id': self.job_id,
+                      'pending_paths': pending_paths,
                       'diagnostic_dir': str(self.diagnostics.directory) if self.diagnostics else None}
             self.emit(result)
             if self.owns_cache:

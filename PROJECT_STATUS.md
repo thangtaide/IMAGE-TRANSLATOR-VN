@@ -1,5 +1,24 @@
 # Trạng thái Image Translator VN
 
+## Mới nhất — Stage3A Online Free, 08/11/2026
+
+**STAGE_3A_COMPLETED_WITH_WARNINGS**. MyMemory API chính thức,ẩn danh5.000ký tự/ngày,
+không key/billing. Người dùng duyệt QA6 mẫu development/1.000ký tự/tối đa8request;
+thực tế6request/37ký tự/0retry,5numeric pass/1date reject; không đo accuracy hoặc
+nới guard. Tách identity cacheOnline mới, giữ Argos/default/signed guard/nguồn111.
+GUI chọn Online Free chung3tab, privacy note, notice ×, quota/rate/auth pause an toàn,
+không tự đổi provider. Tiếp tục có thể đổi phương thức cho phần pending với recipe
+mới, giữ receipt/output cũ; chapter resume chỉ chương đang dở từ cache. Khôi phục
+pending UI đổi provider sau restart chưa triển khai, không chạy cảfolder dưới
+provider mới để giả resume. Xem giới hạn trong báo cáo Stage3A.
+
+Pytest281PASS/10SKIPPED/0FAIL và unittest281PASS/10SKIPPED/0FAIL. Windows3tab+
+Offline E2E thật PASS; GUIquota realOCR/mockHTTP→realArgos resume PASS,279heartbeat.
+Không gọi GUIquota mock là liveAPI E2E ảnh. 595file runtime/resource bảo vệ giữhash,
+120output/119normal+fallback111, needs_retry=[111],models/config/DB/4EXE nguyênvẹn.
+Không tải model/ảnh, cài dependency/buildEXE/Stage3B. Hướng dẫn/test/evidence và
+Git & Fork Handoff: `docs/STAGE3A_ONLINE_FREE_TRANSLATION_REPORT.md`.
+
 ## Bổ sung quy trình Git/Fork — 08/11/2026
 
 Áp dụng yêu cầu từ Stage 3A trở đi: baseline Git trước sửa, kiểm tra ignore/diff/

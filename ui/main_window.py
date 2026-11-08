@@ -48,6 +48,8 @@ class MainWindow(QMainWindow):
         self.paused_at = None
         self.pause_seconds = 0.0
         self.pending_options = None
+        self.provider_paused = False
+        self.provider_pending = []
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
@@ -108,8 +110,10 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel('Dịch')
         row.addWidget(self.mode_label)
         self.mode = QComboBox()
-        self.mode.addItems(['Offline', 'Online', 'Auto Fallback'])
-        self.mode.setCurrentText(self.options.mode)
+        self.mode.addItems(['Offline', 'Online Free', 'Auto Fallback'])
+        self.mode.setCurrentText('Online Free' if self.options.mode == 'Online' else self.options.mode)
+        self.mode.setItemData(0, 'Offline — Argos Translate / model cục bộ', Qt.ToolTipRole)
+        self.mode.setItemData(1, 'Online Free — MyMemory Machine Translation API', Qt.ToolTipRole)
         row.addWidget(self.mode)
         self.online_provider = QComboBox()
         self.online_provider.addItems(['MyMemory', 'LibreTranslate'])
@@ -134,6 +138,9 @@ class MainWindow(QMainWindow):
         self.mode.currentTextChanged.connect(self.update_mode)
         self.update_mode()
         outer.addWidget(self.config_panel)
+        from ui.provider_notice import ProviderNotice
+        self.provider_notice = ProviderNotice()
+        outer.addWidget(self.provider_notice)
         self.resume_previous = QPushButton('Khôi phục cấu hình công việc chưa hoàn thành')
         self.resume_previous.clicked.connect(self.restore_previous)
         folder_layout.addWidget(self.resume_previous)
@@ -248,14 +255,15 @@ class MainWindow(QMainWindow):
 
     def update_mode(self, *_args) -> None:
         mode = self.mode.currentText()
-        folder = self.source_tabs.count() == 0 or self.source_tabs.currentIndex() == 1
+        folder = True  # Translation selection is shared by all three input tabs.
         for widget in (self.mode, self.mode_label, self.online_provider, self.online_label, self.allow_fallback):
             widget.setVisible(folder)
         self.online_provider.setEnabled(folder and mode != 'Offline')
-        self.offline_provider.setEnabled(not folder or mode != 'Online')
+        self.offline_provider.setEnabled(mode not in ('Online', 'Online Free'))
         self.allow_fallback.setEnabled(folder and mode == 'Auto Fallback')
         self.privacy.setText('Offline: toàn bộ OCR và dịch chạy cục bộ; thiếu model sẽ báo lỗi, không tải hoặc gửi dữ liệu.' if mode == 'Offline'
-                             else 'Online: chỉ gửi văn bản OCR để dịch. MyMemory có hạn mức miễn phí; ảnh luôn xử lý trên máy.' if mode == 'Online'
+                             else 'Online Free: văn bản OCR gửi tới provider đã chọn. MyMemory: 5.000 ký tự/ngày ẩn danh; '
+                             'văn bản có thể được lưu và chia sẻ với đối tác MT. Ảnh ở trên máy; không gửi API key.' if mode in ('Online', 'Online Free')
                              else 'Auto Fallback: thử Offline trước. Chỉ gọi Online khi ô đồng ý được bật.')
         if not folder:
             self.privacy.setText('Dịch ảnh/chương bằng Offline với cấu hình OCR, font và xuất ảnh hiện tại. '
@@ -288,6 +296,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, 'Không lưu được cấu hình', str(exc))
             return
         self.failed = []
+        self.provider_paused = False
+        self.provider_pending = []
+        self.provider_notice.hide()
         self.unfinished = []
         self.outputs = {}
         self.details = {}
@@ -323,6 +334,12 @@ class MainWindow(QMainWindow):
 
     def handle_event(self, event: dict) -> None:
         kind = event.get('type')
+        if kind == 'provider_paused':
+            self.provider_paused = True
+            self.provider_pending = list(event['pending_paths'])
+            self.provider_notice.show_error(event)
+            self.current.setText(event['code'] + ' • Tạm dừng; không tự chuyển provider.')
+            return
         if kind == 'files':
             paths = event['files']
             self.unfinished = list(paths)
@@ -402,6 +419,9 @@ class MainWindow(QMainWindow):
             self.current.setText('Đã yêu cầu tạm dừng; tác vụ hiện tại sẽ dừng ở checkpoint an toàn.')
 
     def resume(self) -> None:
+        if self.provider_paused and (not self.worker or not self.worker.isRunning()):
+            self.start(list(self.provider_pending))
+            return
         if self.worker:
             self.worker.control.resume()
             self.pause_button.setEnabled(True)
@@ -425,6 +445,8 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.update_clock()
         self.set_running(False)
+        if self.provider_paused:
+            self.continue_button.setEnabled(bool(self.provider_pending))
 
     def inspect(self, row: int, column: int) -> None:
         path = next((p for p, r in self.rows.items() if r == row), None)
@@ -470,7 +492,7 @@ class MainWindow(QMainWindow):
             self.source.setText(p.source)
             self.output.setText(p.output)
             self.language.setCurrentIndex(max(0, self.language.findData(p.language)))
-            self.mode.setCurrentText(p.mode)
+            self.mode.setCurrentText('Online Free' if p.mode == 'Online' else p.mode)
             self.online_provider.setCurrentText(p.online_provider)
             self.offline_provider.setCurrentText(p.offline_provider)
             self.recursive.setChecked(p.recursive)

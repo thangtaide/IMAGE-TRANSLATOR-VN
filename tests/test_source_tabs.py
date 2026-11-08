@@ -95,7 +95,8 @@ class SourceTabsTests(unittest.TestCase):
         self.assertTrue(window.image_panel.isVisible())
         self.assertFalse(window.folder_page.isVisible())
         self.assertFalse(window.url_panel.isVisible())
-        self.assertFalse(window.mode.isVisible())
+        # Stage3A shares explicit Offline/Online Free selection across sources.
+        self.assertTrue(window.mode.isVisible())
         window.source_tabs.setCurrentIndex(2)
         self.assertTrue(window.url_panel.isVisible())
         self.assertFalse(window.url_panel.browse.isVisible())

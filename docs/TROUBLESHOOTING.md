@@ -1,5 +1,30 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3A — lỗi Online Free
+
+- QUOTA_EXCEEDED: provider báo quota đã hết, dừng dispatch. Không tự nâng gói.
+- RATE_LIMITED: giới hạn tốc độ, không mặc định quota ngày. Retry-After nếu có
+  chỉ là thời gian đợi được trả về; nếu không có, thời điểm khôi phục chưa biết.
+- AUTH_REQUIRED: HTTP401/403 hoặc API báo thiếu quyền; không thử cookie/key khác.
+- TIMEOUT / NETWORK_ERROR / PROVIDER_UNAVAILABLE: tối đa3 thử với backoff hữu hạn,
+  giữ nguồn/fallback; không chuyển provider/endpoint hoặc bật billing.
+- INVALID_RESPONSE: JSON/MIME/size/target không hợp lệ; không coi HTTP200 là dịch xong.
+- NUMERIC_MISMATCH: guard nguyên trạng từ chối mất/thêm/đổi thứ tự số. MyMemory
+  có thể diễn đạt ngày đúng nhưng đổi5,20,5,30 thành20,5,30,5; không tự nới guard,
+  thay số hoặc xóa cache để ép PASS. Diagnostic cục bộ có raw target khi bật.
+- Cancel dùng CancelledError/state cancelled; đang chờ response có thể cần chờ
+  read timeout tối đa25s hoặc OCR hiện tại đến checkpoint. Đóng × không cancel/resume.
+
+Quota notice không chặn GUI. Trong phiên đang mở, đổi phương thức rồi Tiếp tục
+chỉ pending; giữ receipt cũ khi recipe đổi. Cross-restart provider-switch pending
+UI chưa làm: không đổi provider rồi chạy lại cảfolder nếu chỉ muốn phần chưa xong.
+Đối với URL nhiều chương, resume current cached chapter; bắt đầu chương chưa chạy
+là thao tác riêng. Giữ cache/manifest/log, không sửa DB/checkpoint bằng tay.
+
+MyMemory có lưu/chia sẻ text với đối tác; không gửi text bí mật. Không có key
+hoặc billing trong provider ẩn danh. QA thật6request/37ký tự không chứng minh
+toàn bộ chất lượng ngữ nghĩa. Xem báo cáo Stage3A và diagnostic theo job.
+
 ## Stage3: phân biệt lỗi chất lượng với lỗi chương trình
 
 - `Name` hoặc `Lỗi` có thể là **chuỗi model thật trả về**, không phải exception

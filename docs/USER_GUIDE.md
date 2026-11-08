@@ -1,5 +1,35 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Online Free — Stage3A (bản source)
+
+1. Chạy run_source.bat; chọn nguồn ảnh, output và OCR như trước.
+2. Chọn **Online Free**, provider **MyMemory** ở khu vực OCR/dịch chung3tab.
+   Đây là thao tác cho phép gửi text OCR của job tới MyMemory; ảnh ở trên máy.
+   Dịch vụ có thể lưu/chia sẻ text với đối tácMT. Không dùng cho text bí mật.
+3. Bấm Bắt đầu/Tải và dịch sau khi chọn đúng ảnh/chương. Dán URL hay phân tích
+   chương không tự gửi OCR. Chỉ chương được chọn mới xử lý; không tự tải model.
+4. MyMemory ẩn danh miễn phí5.000ký tự/ngày; app chia nhỏ theo giới hạn byte,
+   giãn request. Không hiện số lượt còn lại vì không có số liệu đáng tin.
+5. Khi QUOTA_EXCEEDED/RATE_LIMITED/AUTH_REQUIRED: công việc dừng an toàn, giữ
+   ảnh/output/checkpoint. × chỉ đóng notice, không resume hoặc đổi phương thức.
+6. Trong cùng phiên, có thể chọn Offline hoặc giữ Online Free rồi bấm Tiếp tục.
+   Chỉ phần chưa hoàn tất chạy; đổi phương thức tạo recipe mới, kết quả trước đó
+   giữ receipt riêng. URL nhiều chương: resume chương đang dở từ cache; những
+   chương chưa bắt đầu phải chọn/bắt đầu sau, không tự tải tiếp.
+
+Sau khi đóng app, pending UI cho thao tác đổi provider chưa được khôi phục tự
+động. Cùng recipe có thể khôi phục/bỏ qua thành công theo checkpoint/hash;
+**không đổi provider rồi chạy cảfolder nếu chỉ muốn retry pending**. Giữ cache và
+manifest để bổ sung cross-restart resume ở Stage3C. Không sửa checkpoint bằng tay.
+
+Numeric guard giữ nguyên: bản dịch ngày hợp nghĩa có thể đổi thứ tự token số
+và bị reject. Đọc diagnostic/Trang cần xem lại; fallback không được gọi là dịch
+thành công. Stage3A không tự retry trang111 hoặc dùng handler ngày QA.
+
+LibreTranslate custom cũ chỉ dùng khi bạn có endpoint tựhost/miễn phí được phép;
+không coi libretranslate.com hoặc mọi mirror là miễn phí. Không có Gemini ở Stage3A.
+Chi tiết: STAGE3A_ONLINE_FREE_TRANSLATION_REPORT.md. Chưa build EXE mới.
+
 ## Stage3 — kết quả nghiên cứu, chưa đổi cách dịch
 
 Benchmark150 mẫu có0 bản dịch tham chiếu được người rà soát độc lập. Những

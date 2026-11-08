@@ -74,7 +74,10 @@ class LocalComicJob:
                  adapter: WebsiteAdapter | None = None, retry_only: bool = False):
         self.comic, self.chapters, self.output = comic, chapters, output
         self.options = Options.from_dict(options.to_dict())
-        self.options.mode = 'Offline'
+        # Legacy source jobs retain Offline enforcement. The explicitly selected
+        # Stage3A mode is opt-in and shares the existing processing service.
+        if self.options.mode != 'Online Free':
+            self.options.mode = 'Offline'
         self.options.allow_online_fallback = False
         self.keep_cached = keep_cached
         self.control = control or JobControl()
@@ -197,6 +200,12 @@ class LocalComicJob:
                     data.update(output=str(stage), skip_success=True, preserve_structure=True)
                     options, only = cached.request(Options.from_dict(data))
                     if self.retry_only:
+                        # Reusing successful pages across an explicitly changed
+                        # provider keeps their own receipts; never rewrite them.
+                        for page in manifest['pages']:
+                            if page.get('output') and not page.get('needs_retry') and not page.get('error'):
+                                if inspect_image(Path(page['output']))['sha256'] != page.get('output_sha256'):
+                                    raise CacheError('Output thành công không khớp hash; dừng resume.')
                         only = [str(p) for p, page in zip(cached.paths, manifest['pages'])
                                 if page.get('needs_retry') or page.get('error') or not page.get('output')]
                     manager = ProcessingManager(options, database, self.control, ocr=ocr, service=service,
@@ -271,7 +280,7 @@ class LocalComicJob:
                                 review = dict(job_id=manager.job_id, chapter_id=chapter.chapter_id,
                                     image_index=index, image_filename=page['file'], image_path=event['file'],
                                     stage='EXPORT', error_code='EXPORT_ERROR', exception_type=type(exc).__name__,
-                                    error_message=safe_text(exc), provider=None, mode='Offline', model_identity=None,
+                                    error_message=safe_text(exc), provider=None, mode=self.options.mode, model_identity=None,
                                     ocr_region_index=None, ocr_confidence=None, ocr_source_text=None,
                                     raw_translated_target=None, source_numeric_tokens=None, target_numeric_tokens=None,
                                     validator_version=VALIDATOR_VERSION, retry_count=0, fallback_action=status,
@@ -288,6 +297,18 @@ class LocalComicJob:
 
                     manager.emit = event_received
                     summary = manager.run(only)
+                    if summary['state'] == 'paused_provider':
+                        pending = set(summary['pending_paths'])
+                        for p, page in zip(cached.paths, manifest['pages']):
+                            if str(p) in pending:
+                                page['needs_retry'] = True
+                        manifest.update(state='paused_provider', pipeline_summary=summary,
+                            needs_retry=[p['index'] for p in manifest['pages'] if p.get('needs_retry') or not p.get('output')])
+                        self.cache.save(current_directory, manifest)
+                        result.update(state='paused_provider', paused_chapter=chapter.chapter_id,
+                            pending_chapters=[c.chapter_id for c in self.chapters[position-1:]],
+                            images_exported=result['images_exported'] + sum(bool(p.get('output')) for p in manifest['pages']))
+                        break
                     pages = manifest['pages']
                     review_pages = [p.get('review') for p in pages if p.get('needs_retry') and p.get('review')]
                     originals = sum(p.get('output_status') == FALLBACK_ORIGINAL and bool(p.get('output')) for p in pages)
@@ -315,7 +336,7 @@ class LocalComicJob:
                     if has_errors:
                         raise RuntimeError('Pipeline/xuất ảnh kết thúc với lỗi; xem manifest và chi tiết từng ảnh. '
                                            + '; '.join(processing_errors + publish_errors))
-                    if len([p for p in manifest['pages'] if p.get('pipeline_job_id') == manager.job_id]) != len(cached.paths):
+                    if len([p for p in manifest['pages'] if p.get('pipeline_job_id') and p.get('output')]) != len(cached.paths):
                         raise CacheError('Thiếu trang xuất so với danh sách chương.')
                     if originals:
                         result['chapters_with_warnings'] += 1
