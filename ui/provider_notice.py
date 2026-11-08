@@ -18,43 +18,59 @@ class ProviderNotice(QWidget):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
+        heading = QHBoxLayout()
         self.title = QLabel()
         self.title.setWordWrap(True)
         self.title.setTextFormat(Qt.PlainText)
-        layout.addWidget(self.title)
+        heading.addWidget(self.title, 1)
         self.message = QLabel()
         self.message.setWordWrap(True)
         self.message.setTextFormat(Qt.PlainText)
-        layout.addWidget(self.message)
         row = QHBoxLayout()
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        self.summary.setTextFormat(Qt.PlainText)
+        row.addWidget(self.summary, 1)
         self.settings = QPushButton('Mở Cài đặt Gemini API')
         self.settings.clicked.connect(self.settingsRequested)
         row.addWidget(self.settings)
-        row.addStretch()
         self.dismiss = QPushButton('×')
         self.dismiss.setAccessibleName('Đóng thông báo; giữ công việc tạm dừng')
         self.dismiss.clicked.connect(self.hide)
-        row.addWidget(self.dismiss)
-        layout.addLayout(row)
         self.log_toggle = QToolButton()
-        self.log_toggle.setText('Chi tiết / Nhật ký')
+        self.log_toggle.setText('Chi tiết')
+        self.log_toggle.setAccessibleName('Mở Chi tiết / Nhật ký')
         self.log_toggle.setCheckable(True)
+        heading.addWidget(self.log_toggle)
+        heading.addWidget(self.dismiss)
+        layout.addLayout(heading)
+        layout.addLayout(row)
+        self.details = QWidget()
+        expanded = QVBoxLayout(self.details)
+        expanded.setContentsMargins(0, 0, 0, 0)
+        expanded.addWidget(self.message)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(50)
         self.log.setMaximumHeight(110)
-        self.log.hide()
-        self.log_toggle.toggled.connect(self.log.setVisible)
-        layout.addWidget(self.log_toggle)
-        layout.addWidget(self.log)
+        expanded.addWidget(self.log)
+        self.details.hide()
+        self.log_toggle.toggled.connect(self.details.setVisible)
+        layout.addWidget(self.details)
+        self.active = False
         self.hide()
+
+    def hide(self):
+        self.active = False
+        super().hide()
 
     def show_error(self, event):
         # Never echo arbitrary detail, paths, model output or unknown error strings.
+        self.active = True
         known = {'API_KEY_MISSING', 'FREE_TIER_UNCONFIRMED', 'READY_UNVERIFIED', 'AUTH_REQUIRED',
                  'ACCESS_DENIED', 'MODEL_UNAVAILABLE', 'RATE_LIMITED', 'QUOTA_EXCEEDED', 'NETWORK_ERROR',
                  'TIMEOUT', 'INVALID_RESPONSE', 'REQUEST_BUDGET', 'PROVIDER_UNAVAILABLE', 'INVALID_REQUEST',
-                 'RESPONSE_BLOCKED', 'UNEXPECTED_TOOL_USE', 'CANCELLED', 'PAUSED_BY_USER'}
+                 'RESPONSE_BLOCKED', 'UNEXPECTED_TOOL_USE', 'CANCELLED', 'PAUSED_BY_USER', 'SAVED_ERROR', 'SOURCE_ACCESS_DENIED'}
         code = event.get('code') if event.get('code') in known else 'UNKNOWN_ERROR'
         local = event.get('phase') == 'local_preflight' and event.get('request_sent') is False
         config = code in ('FREE_TIER_UNCONFIRMED', 'API_KEY_MISSING')
@@ -65,7 +81,7 @@ class ProviderNotice(QWidget):
             title = 'Chưa có API key Gemini'
             cause = 'Chưa tìm thấy GEMINI_API_KEY trong môi trường của ứng dụng.'
         elif code == 'INVALID_RESPONSE' and 'Unexpected tool use' in str(event.get('detail', '')):
-            title = 'Guard AGY đã từ chối phản hồi'
+            title = 'AGY bị chặn bởi bộ kiểm tra an toàn (Guard AGY)'
             cause = 'Parser AGY phát hiện dấu hiệu tool use. Đây không phải lỗi quota; chưa đủ bằng chứng phân biệt invocation thật với metadata.'
         elif code == 'PAUSED_BY_USER':
             title = 'Bạn đã yêu cầu tạm dừng'
@@ -82,10 +98,31 @@ class ProviderNotice(QWidget):
                 'REQUEST_BUDGET': 'Đạt budget request cục bộ; không phải bằng chứng hết quota Google.',
                 'INVALID_RESPONSE': 'Phản hồi không qua kiểm tra giao thức/JSON/ID.',
             }.get(code, 'Provider hoặc cấu hình chưa cho phép tiếp tục an toàn.')
+        from providers.gemini_diagnostics import clean
+        api = clean(event.get('gemini_api_request'))
+        saved = event.get('origin') == 'journal' or code == 'SAVED_ERROR'
+        if code == 'ACCESS_DENIED':
+            title = 'Gemini API chưa thể tiếp tục'
+            cause = 'ACCESS_DENIED — Chưa xác định được lỗi phát sinh trước hay sau khi gửi yêu cầu.'
+            if api['request_state'] == 'RESPONSE_RECEIVED' and api['http_status'] == 403 and not saved:
+                title = 'Gemini API từ chối quyền truy cập (HTTP 403)'
+                cause = 'Client Gemini API đã nhận HTTP 403 từ endpoint Google cấu hình cố định; chưa xác định nguyên nhân quyền cụ thể.'
+        if saved:
+            title = 'Công việc có lỗi đã lưu'
+            cause = 'Đây là trạng thái lỗi từ lần chạy trước. Chưa có bằng chứng yêu cầu Gemini API mới được gửi trong phiên hiện tại.'
+        if code == 'SOURCE_ACCESS_DENIED':
+            title = 'Nguồn truyện từ chối truy cập'
+            cause = 'Website nguồn hạn chế truy cập chương. Đây là lỗi source adapter, không phải Gemini API.'
         facts = ('Chưa khởi chạy lượt xử lý mới, chưa gửi OCR trong thao tác này.' if local else
                  'Kết quả đã hoàn tất được giữ. Chưa xác minh trạng thái gửi request từ thông báo này.')
         if event.get('phase') == 'provider_preflight' and event.get('request_sent') is False:
             facts = 'Request của batch hiện tại bị chặn trước HTTP. Những lần gọi trước chưa được xác minh tại đây.'
+        if not saved and api['request_state'] == 'NOT_ATTEMPTED':
+            facts = 'Attempt hiện tại chưa gọi HTTP; không phải bằng chứng Google từ chối. Output/cache hoàn tất được giữ.'
+        elif not saved and api['request_state'] == 'ATTEMPT_STARTED':
+            facts = 'Client đã bắt đầu HTTP attempt; chưa có bằng chứng đã tới Google hoặc nhận response. Output/cache hoàn tất được giữ.'
+        elif not saved and api['request_state'] == 'RESPONSE_RECEIVED':
+            facts = 'Đã nhận HTTP response' + (f" ({api['http_status']})" if api['http_status'] is not None else '') + '. Output/cache hoàn tất được giữ; không tự retry.'
         remedy = ('Mở Cài đặt Gemini API → kiểm tra project ở Google AI Studio → xác nhận Free tier khi đúng → chủ động Tiếp tục hoặc Bắt đầu.'
                   if config else 'Xem mã lỗi và diagnostic cục bộ. Chủ động Tiếp tục khi đã xử lý nguyên nhân; không tự retry hoặc đổi provider.')
         delay = event.get('retry_after')
@@ -94,6 +131,12 @@ class ProviderNotice(QWidget):
         self.title.setText(title + ' • ' + code)
         self.last_code = code
         self.message.setText(cause + '\n' + facts + '\n' + remedy + ('' if config else reset))
+        short = ('Mở Cài đặt và kiểm tra project ở AI Studio; chỉ xác nhận khi đúng.' if config else
+                 'Đây là lỗi đã lưu; xem chi tiết trước khi chủ động tiếp tục.' if saved else
+                 'Kiểm tra quyền truy cập website nguồn; không vượt login/VIP/paywall/CAPTCHA.' if code == 'SOURCE_ACCESS_DENIED' else
+                 'Kiểm tra quyền model/project tại AI Studio. Xem Chi tiết; không tự đổi key/billing.' if code == 'ACCESS_DENIED' else
+                 'Xem Chi tiết/Nhật ký để biết bằng chứng và cách xử lý; kết quả cũ được giữ.')
+        self.summary.setText(short)
         self.settings.setVisible(config)
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
         provider = event.get('provider', event.get('mode', ''))
@@ -101,4 +144,10 @@ class ProviderNotice(QWidget):
         page = event.get('image_index')
         page_label = ' • Trang ' + str(page) if type(page) is int and 0 < page < 10**7 else ''
         self.log.appendPlainText(stamp + ' • ' + provider + ' • ' + code + page_label + '\n' + facts + '\n' + remedy)
+        if event.get('gemini_api_request'):
+            self.log.appendPlainText('Request: ' + api['request_state'] + ' • HTTP: ' + str(api['http_status']) +
+                ' • reason: ' + api['error_reason'] + ' • model: ' + api['model'])
         self.show()
+
+    def show_saved_error(self):
+        self.show_error(dict(code='SAVED_ERROR', origin='journal'))

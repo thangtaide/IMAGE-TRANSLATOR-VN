@@ -1,5 +1,44 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3D.2 — ACCESS_DENIED và bằng chứng request
+
+Tại runtime chương276880, có diagnostic ACCESS_DENIED mới lúc18:50:21 ngày
+08/11/2026; config/journal mới đã Free=true. Source chỉ ánh xạ403 thành mã này,
+nhưng log lịch sử chưa lưu HTTP status/attempt/response fields. Có suy luận
+mạnh từ code về nhánh403, chưa có bằng chứng độc lập về response hoặc lý do
+quyền bị từ chối. Không tự kết luận hết quota, sai key/project, region hay model
+eligibility. Không yêu cầu bật billing hoặc tạo key mới chỉ từ mã lỗi đó.
+
+Diagnostic mới có nhóm `gemini_api_request`, không raw request/response/OCR:
+
+| request_state | Có thể kết luận |
+|---|---|
+| NOT_ATTEMPTED | Attempt hiện tại dừng trước HTTP; không suy các lượt trước. |
+| ATTEMPT_STARTED | Client đã gọi HTTP; chưa chứng minh Google đã nhận hoặc đã trả response. |
+| RESPONSE_RECEIVED | Client đã nhận response/header status; xem http_status và reason allowlist. |
+| UNKNOWN | Không có đủ metadata; không đồng nghĩa chưa gửi. |
+
+HTTP status giữ riêng code lỗi:401 AUTH_REQUIRED,403 ACCESS_DENIED,404 model,
+429 rate/quota. Timeout đọc body vẫn có thể ghi nhận status đã nhận trước đó;
+không đổi nó thành ACCESS_DENIED. Quota ngày chỉ theo QuotaFailure/PerDay cũ.
+`error_reason` chỉ giữ enum trong allowlist, không phải toàn bộ thông báo Google;
+UNSPECIFIED nghĩa chưa biết. Model/status/attempt ID/batch ID không chứa key.
+
+Nếu báo **Công việc có lỗi đã lưu**, đó là lịch sử; khôi phục cấu hình chưa tạo
+request mới. Nếu banner chỉ **Gemini API chưa thể tiếp tục**, hãy đọc Chi tiết,
+không suy có403 từ chữ ACCESS_DENIED. HTTP403 được xác minh vẫn chưa giải thích
+vì sao tài khoản bị từ chối: kiểm tra quyền model/project trên AI Studio, không
+mặc định có lỗi billing hoặc cần thay key. Key đọc từ môi trường tiến trình;
+ứng dụng không thể xác nhận key thuộc project nào bằng cách nhìn chuỗi key và
+không lưu/hiển thị key hoặc prefix để đối chiếu.
+
+Lỗi source adapter có nhãn riêng **Nguồn truyện từ chối truy cập**. Không vượt
+login/VIP/paywall/CAPTCHA hoặc né401/403/429. Nút phân tích chương nằm trên bảng,
+không còn trong cache/nâng cao; tooltip giải thích thiếu selection/busy/giới hạn
+1–10. Dán URL hoặc discovery không tự tải/dịch. Stage3D.2 chỉ dùng mock/Qt QA;
+Gemini API thật vẫn cần QA nhỏ được duyệt riêng, không lấy chương production
+đang pause làm phép thử tự động.
+
 ## Stage3D.1 — phân biệt preflight với lỗi dịch
 
 | Trạng thái | Đã xác minh / cách xử lý |

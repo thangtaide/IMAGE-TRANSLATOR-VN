@@ -5,11 +5,14 @@ import json
 import os
 import re
 import time
+from uuid import uuid4
 
 import requests
 
 from providers.base import TranslationProvider
 from providers.online import ProviderSuspended
+from providers.gemini_diagnostics import clean, reason_from_error
+from core.types import CancelledError
 
 MODE = 'AI Gemini API'
 VERSION = 'gemini-api-comic-json-v1:literal-numbers-v2-signed'
@@ -53,6 +56,10 @@ class GeminiAPIProvider(TranslationProvider):
         self.blocked = None
         self.usage = {}
         self.retry_count = 0  # No automatic replay of a potentially billable generation.
+        self.last_diagnostic = clean(dict(request_state='NOT_ATTEMPTED'))
+
+    def observe(self, **fields):
+        self.last_diagnostic = clean(dict(self.last_diagnostic, **fields))
 
     @property
     def identity(self):
@@ -77,6 +84,11 @@ class GeminiAPIProvider(TranslationProvider):
             'RESPONSE_BLOCKED': 'Gemini API không hoàn tất phản hồi an toàn; giữ pending.',
         }
         self.blocked = ProviderSuspended(code, messages[code], status=status, retry_after=retry_after)
+        fields = dict(error_code=code, retry_after=retry_after)
+        if code in ('API_KEY_MISSING', 'FREE_TIER_UNCONFIRMED'):
+            fields['preflight_state'] = code
+        self.observe(**fields)
+        self.blocked.gemini_api_diagnostic = self.last_diagnostic
         if status is None and code in ('FREE_TIER_UNCONFIRMED', 'API_KEY_MISSING', 'INVALID_REQUEST'):
             self.blocked.phase = 'provider_preflight'
             self.blocked.request_sent = False
@@ -89,6 +101,7 @@ class GeminiAPIProvider(TranslationProvider):
     def translate_batch(self, texts, source, target='vi', *, item_ids=None, context=None):
         if self.blocked:
             raise self.blocked
+        self.last_diagnostic = clean(dict(request_state='NOT_ATTEMPTED'))
         self.checkpoint()
         ids = item_ids if item_ids is not None else [f'r{i}' for i in range(len(texts))]
         if (source not in ('zh', 'zt', 'en', 'ko') or target != 'vi' or not isinstance(texts, list)
@@ -124,6 +137,7 @@ class GeminiAPIProvider(TranslationProvider):
             self.fail('INVALID_REQUEST')
         if not self.free_tier_confirmed:
             self.fail('FREE_TIER_UNCONFIRMED')
+        self.observe(preflight_state='READY_UNVERIFIED')
         if self.requests >= self.max_requests:
             self.fail('REQUEST_BUDGET')
         self.requests += 1
@@ -131,9 +145,11 @@ class GeminiAPIProvider(TranslationProvider):
         started = time.monotonic()
         try:
             # The key is header-only, never part of a URL, identity, cache or journal.
+            self.observe(request_state='ATTEMPT_STARTED', request_attempt_id=uuid4().hex)
             response = self.client.post(ENDPOINT + self.model + ':generateContent',
                 headers={'x-goog-api-key': key, 'Content-Type': 'application/json'}, json=payload,
                 timeout=(8, min(10, self.timeout)), verify=True, allow_redirects=False, stream=True)
+            self.observe(request_state='RESPONSE_RECEIVED', http_status=response.status_code)
             body = bytearray()
             # Byte granularity also bounds a slow trickle: a larger buffered read
             # could postpone wall-clock/cancel checks while the socket stays active.
@@ -150,6 +166,7 @@ class GeminiAPIProvider(TranslationProvider):
             except (ValueError, UnicodeError, RecursionError):
                 result = None
             if status != 200:
+                self.observe(error_reason=reason_from_error(result))
                 code = {400: 'INVALID_REQUEST', 401: 'AUTH_REQUIRED', 403: 'ACCESS_DENIED',
                         404: 'MODEL_UNAVAILABLE', 429: 'RATE_LIMITED'}.get(status, 'PROVIDER_UNAVAILABLE')
                 # Daily quota classification only from structured QuotaFailure identifiers.
@@ -168,7 +185,13 @@ class GeminiAPIProvider(TranslationProvider):
                 self.fail(code, status=status, retry_after=delay)
             if response.headers.get('Content-Type', '').split(';')[0].lower().strip() != 'application/json':
                 self.fail('INVALID_RESPONSE')
-            return self.parse(result, ids)
+            targets = self.parse(result, ids)
+            self.observe(error_code='SUCCESS')
+            return targets
+        except CancelledError as exc:
+            self.observe(error_code='CANCELLED')
+            exc.gemini_api_diagnostic = self.last_diagnostic
+            raise
         except requests.Timeout:
             self.fail('TIMEOUT')
         except requests.RequestException:

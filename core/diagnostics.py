@@ -74,6 +74,14 @@ class DiagnosticLog:
                                 'target_numeric_tokens', 'image_path', 'output_path'):
                         data[key] = None
                     data['error_message'] = 'AGY diagnostic: see error_code and agy_protocol.'
+                if 'gemini_api_request' in data:
+                    from providers.gemini_diagnostics import clean
+                    data['gemini_api_request'] = clean(data['gemini_api_request'])
+                    allowed = {'timestamp', 'job_id', 'chapter_id', 'image_index', 'stage', 'error_code',
+                        'exception_type', 'checkpoint_state', 'fallback_action', 'mode', 'provider',
+                        'model_identity', 'validator_version', 'retry_count', 'gemini_api_request'}
+                    data = {k:v for k,v in data.items() if k in allowed}
+                    data['error_message'] = 'Gemini API diagnostic: see error_code and gemini_api_request.'
                 truncated = []
                 for key, value in list(data.items()):
                     if isinstance(value, str):

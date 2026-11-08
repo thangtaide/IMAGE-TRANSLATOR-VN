@@ -389,6 +389,15 @@ class ProcessingManager:
             raise ValueError('Cỡ chữ không hợp lệ')
         self.output.mkdir(parents=True, exist_ok=True)
 
+    def api_diagnostic(self, record, exc, checkpoint, pending_count):
+        if self.options.mode == GEMINI_API_MODE:
+            from providers.gemini_diagnostics import clean
+            info = dict(getattr(exc, 'gemini_api_diagnostic', None) or {})
+            info.update(job_id=self.job_id, chapter_id=self.chapter_id, checkpoint_state=checkpoint,
+                        pending_page_count=pending_count, cache_preservation_state='RETAINED',
+                        error_code=record.get('error_code', 'UNKNOWN'))
+            record['gemini_api_request'] = clean(info)
+
     def destination(self, path: Path) -> Path:
         relative = path.relative_to(self.source)
         suffix = path.suffix.lower() if self.options.output_format == 'original' else '.' + self.options.output_format
@@ -598,6 +607,7 @@ class ProcessingManager:
                         record.update(preflight_phase=exc.phase, request_sent=False, request_scope='current_batch')
                         for key in ('ocr_source_text', 'raw_translated_target', 'source_numeric_tokens', 'target_numeric_tokens'):
                             record.pop(key, None)
+                    self.api_diagnostic(record, exc, 'paused_provider', len(pending_paths))
                     log_path = self.diagnostics.write(record)
                     self.cache.checkpoint(self.job_id, str(path), 'paused_provider',
                                           fingerprint=fingerprint, detail=exc.code)
@@ -606,10 +616,16 @@ class ProcessingManager:
                         phase=getattr(exc, 'phase', None), request_sent=getattr(exc, 'request_sent', None),
                         request_scope=getattr(exc, 'request_scope', None),
                         image_index=image_indices[str(path)], provider=self.service.last_attempt.get('provider'),
+                        gemini_api_request=record.get('gemini_api_request'),
                         pending_paths=pending_paths))
                     state = 'paused_provider'
                     break
                 except CancelledError as exc:
+                    if self.options.mode == GEMINI_API_MODE:
+                        record = dict(job_id=self.job_id, chapter_id=self.chapter_id, stage='TRANSLATION',
+                            error_code='CANCELLED', checkpoint_state='cancelled', mode=GEMINI_API_MODE)
+                        self.api_diagnostic(record, exc, 'cancelled', len(files)-index)
+                        self.diagnostics.write(record)
                     if self.options.mode == AGY_MODE and getattr(exc, 'agy_diagnostic', None):
                         self.diagnostics.write(dict(job_id=self.job_id, chapter_id=self.chapter_id,
                             image_index=image_indices[str(path)], image_filename=path.name,
@@ -655,6 +671,7 @@ class ProcessingManager:
                     if self.options.mode == AGY_MODE:
                         from providers.agy_diagnostics import transport
                         record['agy_protocol'] = getattr(exc, 'agy_diagnostic', None) or transport(code)
+                    self.api_diagnostic(record, exc, checkpoint, len(files)-index)
                     log_path = self.diagnostics.write(record)
                     # UI/checkpoints receive metadata only, never raw OCR/provider text.
                     review = {k: record[k] for k in ('job_id', 'chapter_id', 'image_index', 'image_filename', 'image_path',

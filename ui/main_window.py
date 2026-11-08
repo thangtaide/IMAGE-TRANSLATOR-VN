@@ -326,6 +326,9 @@ class MainWindow(QMainWindow):
         self.provider_info.setText(info)
         self.provider_info.setToolTip(self.privacy.text())
         self.privacy.hide()
+        if hasattr(self, 'provider_notice'):
+            self.provider_notice.setVisible(self.provider_notice.active and
+                self.source_tabs.currentWidget() == self.folder_page)
         ready = check_configuration(self._mode_options()).ready
         for owner in (self, getattr(self, 'image_panel', None), getattr(self, 'url_panel', None)):
             notice = getattr(owner, 'provider_notice', None)
@@ -624,6 +627,8 @@ class MainWindow(QMainWindow):
                 self.provider_paused = True
                 self.continue_button.setEnabled(bool(self.provider_pending))
                 self.current.setText('Đã khôi phục phần còn dở. Chọn phương thức rồi bấm Tiếp tục; chưa gửi dữ liệu online.')
+                if self.pending_journal.get('state') == 'paused_provider':
+                    self.provider_notice.show_saved_error()
 
     def closeEvent(self, event) -> None:
         for panel in (self.image_panel, self.url_panel):

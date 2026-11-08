@@ -1,5 +1,34 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Stage3D.2 — luồng chọn và phân tích chương
+
+1. Tab Link truyện: nhập URL, bấm **Phân tích link** hoặc chủ động nhấn Enter.
+   Chỉ nhập URL không tự gọi website; Enter cũng không bắt đầu tải/dịch.
+2. Danh sách chương ở ngay dưới metadata. Chọn chương, hoặc Chọn tất cả/Bỏ chọn
+   tất cả. Quyền truy cập/số ảnh/điều kiện tải vẫn có trong tooltip và nâng cao.
+3. Bấm **Phân tích chương đã chọn** ngay trên bảng. Không cần mở Tùy chọn
+   nguồn/cache. Mỗi lượt tối đa10chương như giới hạn worker cũ; nếu chọn hơn,
+   nút giải thích lý do disabled. Việc phân tích giữ selection/thứ tự, không
+   tải file ảnh, không dịch và vẫn qua access gate của adapter.
+4. Sau khi điều kiện tải hợp lệ, chủ động **Tải và dịch** dưới bảng. Tạm dừng/
+   Tiếp tục từ cache/Hủy/Mở kết quả giữ hành vi cũ. Resume chỉ bật khi có mô tả
+   checkpoint của chương hiện tại; worker vẫn xác minh đầy đủ trước xử lý.
+5. Thư mục xuất/cache/chi tiết kỹ thuật nằm dưới phần chính, có thể mở rộng.
+   Menu Thêm chứa khôi phục job đã lưu và retry. Cửa sổ nhỏ/high DPI có vùng cuộn.
+
+Thông báo lỗi mặc định chỉ có tiêu đề/mã/hướng xử lý ngắn. Bấm **Chi tiết** để
+xem nguyên nhân, bằng chứng request, provider/model/trang và nhật ký đã lọc.
+× chỉ ẩn thông báo; không resume hay đổi provider. Lỗi đã lưu được ghi rõ là
+lịch sử, không được coi là request mới trong phiên hiện tại.
+
+Với Gemini API: đủ Free tier/key presence chỉ tạo `READY_UNVERIFIED` cục bộ.
+`ACCESS_DENIED` không tự chứng minh key sai hoặc phải bật billing. Chỉ banner có
+metadata RESPONSE_RECEIVED + status403 mới nói HTTP403. NOT_ATTEMPTED là chưa
+gọi HTTP trong attempt đó; ATTEMPT_STARTED chưa chứng minh đến Google; UNKNOWN
+là chưa đủ bằng chứng. Không tạo key mới, đổi model hoặc bật billing chỉ vì
+thông báo chung. Lỗi **Nguồn truyện từ chối truy cập** là từ website nguồn,
+không phải Gemini. Giữ nguyên các hướng dẫn thiết lập bên dưới.
+
 ## Stage3D.1 — giao diện gọn và preflight
 
 Nếu app đang mở từ trước cập nhật, đóng an toàn và mở lại `run_source.bat` để

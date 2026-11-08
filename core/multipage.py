@@ -119,6 +119,11 @@ class MultiPageAGY:
                 source_characters=sum(len(i.region.text) for i in missing))
             def attach(exc, observed=None):
                 if self.is_api:
+                    from providers.gemini_diagnostics import clean
+                    observed = getattr(exc, 'gemini_api_diagnostic', None) or getattr(self.provider, 'last_diagnostic', None)
+                    info = dict(observed) if isinstance(observed, dict) else {}
+                    info.update(batch_id=batch_meta['batch_id'])
+                    exc.gemini_api_diagnostic = clean(info)
                     return  # REST responses never enter AGY NDJSON diagnostics.
                 from providers.agy_diagnostics import sanitize, transport
                 info = dict(observed or getattr(exc, 'agy_diagnostic', None) or

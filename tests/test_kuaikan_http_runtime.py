@@ -236,6 +236,12 @@ class MockedHTTPQThreadTests(unittest.TestCase):
         self.assertEqual(panel.selected(), [])
         panel.check_all(True)
         self.assertEqual(len(panel.selected()), 26)
+        # Existing discovery worker accepts at most10 chapters per explicit action.
+        self.assertFalse(panel.analyze_images.isEnabled())
+        self.assertIn('1–10', panel.analyze_images.toolTip())
+        panel.check_all(False)
+        from PySide6.QtCore import Qt
+        panel.table.item(0, 0).setCheckState(Qt.Checked)
         self.assertTrue(panel.analyze_images.isEnabled())
         self.assertFalse(panel.download.isEnabled())
 

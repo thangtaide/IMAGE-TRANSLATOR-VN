@@ -1,5 +1,19 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3D.2 — phân tích chương trực tiếp và diagnostic API
+
+Tab Link truyện theo luồng: **URL → Phân tích link → chọn chương → Phân tích
+chương đã chọn → Tải và dịch**. Nút phân tích chương luôn ở trên bảng, không
+cần mở cache/nâng cao. Giới hạn phân tích cũ1–10chương/lượt được giải thích ngay
+ở nút. Phân tích chỉ discovery, không tải ảnh/dịch; chỉ Tải và dịch bắt đầu job.
+
+Thông báo lỗi mặc định gọn, có Chi tiết mở rộng. Lỗi API phân biệt chưa attempt,
+đã attempt, đã nhận response và chưa biết. `READY_UNVERIFIED` chỉ là cấu hình
+cục bộ, không chứng minh generateContent được phép. HTTP403 lịch sử chưa có đủ
+metadata để xác nhận độc lập nguyên nhân quyền; không yêu cầu bật billing/đổi
+key/model. Chưa gọi API thật trong Stage này, không build EXE. Xem
+[báo cáo Stage3D.2](docs/STAGE3D2_ACCESS_DIAGNOSTICS_CHAPTER_UI_REPORT.md).
+
 ## Stage3D.1 — thiết lập Gemini API và giao diện gọn
 
 Thanh cấu hình chung còn OCR, phương thức dịch, model/provider và Cài đặt.

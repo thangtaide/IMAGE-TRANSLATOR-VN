@@ -1,5 +1,33 @@
 # Trạng thái Image Translator VN
 
+## Stage3D.2 — access diagnostics và luồng chương, 08/11/2026
+
+**STAGE_3D2_WITH_WARNINGS**. Baseline main/HEAD2226723, repo sạch. Lỗi mới
+ACCESS_DENIED lúc18:50:21/job e26eec3c…/chapter276880; config và journal mới đều
+Free=true. Source chỉ mapping403 sau HTTP, nhưng log lịch sử thiếu status/
+attempt/response/reason độc lập. Có suy luận nhánh403, chưa chứng minh request
+tới Google hoặc nguyên nhân quyền cụ thể; không gán HTTP_403_CONFIRMED cho
+lượt lịch sử. Không tự thay key/model/billing hoặc kết luận quota.
+
+Thêm observer Gemini metadata với NOT_ATTEMPTED/ATTEMPT_STARTED/RESPONSE_RECEIVED/
+UNKNOWN, UUID attempt/batch/job/pending/status/reason allowlist, hai lớp lọc log.
+Không key/header/body/prompt/OCR/target; không sửa log cũ. Banner gọn có Chi tiết,
+phân biệt HTTP403 có evidence, lỗi chưa rõ, lỗi đã lưu, source denied và AGYguard.
+Không nới guard/auto retry/switch, cache identity và HTTP mapping giữ nguyên.
+
+URL→chọn chương→Phân tích chương đã chọn trực tiếp trên bảng→Tải và dịch.
+Không cần mở cache/advanced để phân tích; giữ giới hạn worker1–10, selection/
+order/access gate. Thư mục/cache phía dưới, nút dịch dưới bảng, banner mặc định
+69logicalpx trong9case Qt100/125/150%. Resume descriptor được kiểm tra trước
+enable; validation receipt/hash vẫn ở worker như trước. Không đổi ResumeStore.
+
+27test mới; pytest/unittest mỗi bộ454PASS/10SKIPPED/0FAIL (464ca). Qt Windows
+offscreen9layout và OCR/Argos/E2E thật PASS, chưa nghiệm thu nativeWindowsmonitor
+hoặc Gemini API thật.2.444/2.444file bảo vệ giữ hash,4EXE/config/model/DB/journal/
+output cũ nguyên vẹn. Không API/AGY/MyMemory/source live, không resumeproduction,
+build hoặc cài dependency. Xem docs/STAGE3D2_ACCESS_DIAGNOSTICS_CHAPTER_UI_REPORT.md,
+evidence logs/stage3d2-20261108T120529Z. Người dùng review/commit trong Fork.
+
 ## Stage3D.1 — API preflight và compact GUI, 08/11/2026
 
 **STAGE_3D1_WITH_WARNINGS**. HEAD baseline mới7ee5962/main, repo sạch khi bắt
