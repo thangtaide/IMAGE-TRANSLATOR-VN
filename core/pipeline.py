@@ -244,7 +244,7 @@ class ProcessingManager:
     def __init__(self, options: Options, cache: TranslationCache | None = None,
                  control: JobControl | None = None, emit: Callable[[dict], None] = lambda _: None,
                  ocr=None, service=None, chapter_id: str | None = None, diagnostic_root: Path | None = None,
-                 override_registry: OCRRegionOverrides | None = None):
+                 override_registry: OCRRegionOverrides | None = None, resume_id: str | None = None):
         self.options = options
         self.cache = cache or TranslationCache()
         self.owns_cache = cache is None
@@ -263,13 +263,61 @@ class ProcessingManager:
         self.counts = {'completed': 0, 'failed': 0, 'skipped': 0}
         self.fallback_count = 0
         self.review_pages: list[dict] = []
+        from core.resume import ResumeStore
+        self.resume_store = ResumeStore(getattr(self.cache, 'path', None))
+        self.resume_id = resume_id
+        self.journal = None
+
+    def cache_source_hash(self, path):
+        value = file_digest(path)
+        if self.journal:
+            page = next(p for p in self.journal['pages'] if p['path'] == str(path))
+            if value != page['source_hash']:
+                raise ValueError('RESUME_SOURCE_CHANGED: ảnh nguồn đổi trong khi xử lý')
+        return value
+
+    def page_done(self, path, relevant, ocr_identity, service_identity):
+        previous = self.cache.item(self.job_id, str(path))
+        if not previous or previous['status'] != 'done':
+            return False
+        registry = self.override_registry if self.override_registry is not None else OCRRegionOverrides.load()
+        rules = registry.for_image(self.cache_source_hash(path), path)
+        parts = [file_digest(path), relevant, ocr_identity, service_identity]
+        revision = registry.revision(rules)
+        if revision:
+            parts.append({'ocr_override_revision': revision})
+        target = self.destination(path)
+        return (previous['fingerprint'] == digest(parts) and target.is_file()
+                and self.cache.get('output-hash', str(target)) == file_digest(target))
+
+    def load_ocr_page(self, path, source_hash, ocr_identity):
+        registry = self.override_registry if self.override_registry is not None else OCRRegionOverrides.load()
+        rules = registry.for_image(source_hash, path)
+        key = digest([source_hash, ocr_identity, self.options.language, self.options.confidence,
+                      self.options.tile_size, self.options.reading_direction])
+        data = self.cache.get('ocr', key)
+        if data is None:
+            image = open_image(path)
+            regions, warnings = self.ocr.recognize(np.array(image.convert('RGB')), self.options.language,
+                self.options.confidence, self.options.tile_size, self.options.reading_direction, self.control.checkpoint)
+            self.cache.put('ocr', key, {'regions': [asdict(r) for r in regions], 'warnings': warnings})
+        else:
+            regions, warnings = [OCRResult(**r) for r in data['regions']], list(data['warnings'])
+        regions, receipts = registry.apply(regions, rules)
+        if receipts:
+            warnings.append(f'Đã bỏ qua {len(receipts)} vùng OCR giả theo evidence/hash/polygon; cache OCR gốc giữ nguyên.')
+        preserved = [r for r in regions if not any(c.isalpha() for c in r.text)]
+        regions = [r for r in regions if any(c.isalpha() for c in r.text)]
+        if preserved:
+            warnings.append(f'Giữ nguyên {len(preserved)} vùng chỉ có số/ký hiệu; không xóa/chèn lại.')
+        return regions, warnings, preserved, receipts
 
     def fallback_original(self, path: Path, destination: Path, expected_hash: str) -> Path:
         """Publish a verified byte-for-byte original under a separate immutable name."""
         target = destination.with_name(destination.stem + '.fallback-original' + path.suffix.lower())
         return self._copy_original(path, target, expected_hash)
 
-    def _copy_original(self, path: Path, target: Path, expected_hash: str) -> Path:
+    def _copy_original(self, path: Path, target: Path, expected_hash: str, before_publish=None) -> Path:
         if target.resolve() == path.resolve() or not target.resolve().is_relative_to(self.output):
             raise ValueError('Không sao chép đè nguồn hoặc ngoài thư mục output.')
         # Local import avoids the sources.collection -> pipeline import cycle.
@@ -296,6 +344,8 @@ class ProcessingManager:
             if inspect_image(temp)['sha256'] != expected_hash or file_digest(path) != expected_hash:
                 raise IOError('Ảnh thay đổi khi sao chép dự phòng')
             self.control.checkpoint()
+            if before_publish:
+                before_publish(temp)
             # Atomic no-clobber publication, even if another process creates target.
             if os.name == 'nt':
                 os.rename(temp, target)  # Windows rename refuses to replace existing targets, including on FAT.
@@ -355,11 +405,15 @@ class ProcessingManager:
             self.validate()
             files = scan_images(self.source, self.options.recursive, self.output)
             image_indices = {str(p): n for n, p in enumerate(files, 1)}
+            self.page_indices = image_indices
             if only is not None:
                 requested = set(only)
                 files = [p for p in files if str(p) in requested]
             if not files:
                 raise ValueError('Thư mục không có ảnh được hỗ trợ hoặc không còn ảnh cần thử lại')
+            self.journal = self.resume_store.pipeline(self.options, files, self.cache, self.resume_id, self.chapter_id)
+            self.resume_id = self.journal['id']
+            self.emit({'type': 'resume_ready', 'resume_id': self.resume_id})
             self.emit({'type': 'files', 'files': [str(p) for p in files]})
             # Validate model presence before decoding/erasing images.
             preflight_error, preflight_stage = None, None
@@ -382,8 +436,11 @@ class ProcessingManager:
             relevant.pop('diagnostic_text', None)
             if self.options.mode != AGY_MODE:
                 # Adding optional AGY settings must not invalidate old jobs.
-                for key in ('agy_executable', 'agy_model', 'agy_timeout', 'agy_max_requests'):
+                for key in ('agy_executable', 'agy_model', 'agy_timeout', 'agy_max_requests',
+                            'agy_batch_chars', 'agy_batch_regions', 'agy_context'):
                     relevant.pop(key, None)
+            else:
+                relevant['agy_batch_revision'] = 'multipage-ids-context-v1'
             font_path = Path(self.options.font) if self.options.font else default_font()
             relevant['font_sha256'] = file_digest(font_path) if font_path.is_file() else 'missing-font'
             if self.options.erase_mode == 'custom' and self.options.mask_path:
@@ -391,6 +448,10 @@ class ProcessingManager:
             self.job_id = digest([relevant, ocr_identity, service_identity, 'pipeline-v3'])
             self.diagnostics = DiagnosticLog(self.job_id, self.options.diagnostic_text, self.diagnostic_root)
             self.cache.job(self.job_id, self.options, 'running')
+            batching = None
+            if self.options.mode == AGY_MODE and files and preflight_error is None:
+                from core.multipage import MultiPageAGY
+                batching = MultiPageAGY(self, files, relevant, ocr_identity, service_identity)
             for index, path in enumerate(files):
                 self.control.checkpoint()
                 destination = self.destination(path)
@@ -399,7 +460,14 @@ class ProcessingManager:
                 original_hash, fingerprint = None, ''
                 self.service.last_attempt = {}
                 try:
-                    original_hash = file_digest(path)
+                    restored = next(p for p in self.journal['pages'] if p['path'] == str(path))
+                    if restored['state'] == 'done':
+                        self.counts['skipped'] += 1
+                        self.event(path, 'Bỏ qua', 100, index+1, len(files), output=restored['output'],
+                            output_status=TRANSLATED_SUCCESS, image_index=image_indices[str(path)],
+                            receipt_job_id=restored['job_id'])
+                        continue
+                    original_hash = self.cache_source_hash(path)
                     stage = 'OCR'
                     registry = self.override_registry if self.override_registry is not None else OCRRegionOverrides.load()
                     override_rules = registry.for_image(original_hash, path)
@@ -417,6 +485,8 @@ class ProcessingManager:
                                 self.counts['skipped'] += 1
                                 self.event(path, 'Bỏ qua', 100, index+1, len(files), output=str(destination),
                                            output_status=TRANSLATED_SUCCESS, image_index=image_indices[str(path)])
+                                self.resume_store.page(self.journal, path, state='done', output=str(destination),
+                                    output_hash=file_digest(destination), job_id=self.job_id, fingerprint=fingerprint)
                                 continue
                     # Never overwrite a user-created/modified result with no matching receipt.
                     if destination.exists():
@@ -430,26 +500,8 @@ class ProcessingManager:
                     stage = 'OCR'
                     self.event(path, 'OCR', 5, index+1, len(files))
                     image = open_image(path)
-                    ocr_key = digest([original_hash, ocr_identity, self.options.language, self.options.confidence,
-                                      self.options.tile_size, self.options.reading_direction])
-                    ocr_data = self.cache.get('ocr', ocr_key)
-                    if ocr_data is None:
-                        regions, warnings = self.ocr.recognize(np.array(image.convert('RGB')), self.options.language,
-                            self.options.confidence, self.options.tile_size, self.options.reading_direction, self.control.checkpoint)
-                        self.cache.put('ocr', ocr_key, {'regions': [asdict(r) for r in regions], 'warnings': warnings})
-                    else:
-                        regions = [OCRResult(**r) for r in ocr_data['regions']]
-                        warnings = list(ocr_data['warnings'])
-                    regions, override_receipts = registry.apply(regions, override_rules)
-                    if override_receipts:
-                        warnings.append(f'Đã bỏ qua {len(override_receipts)} vùng OCR giả theo evidence/hash/polygon; cache OCR gốc giữ nguyên.')
-                    # Numerals and punctuation have no language to translate.
-                    # Keep their source pixels intact, including false positives
-                    # such as a digit detected on a drawing or decorative mark.
-                    preserved_regions = [r for r in regions if not any(c.isalpha() for c in r.text)]
-                    regions = [r for r in regions if any(c.isalpha() for c in r.text)]
-                    if preserved_regions:
-                        warnings.append(f'Giữ nguyên {len(preserved_regions)} vùng chỉ có số/ký hiệu; không xóa/chèn lại.')
+                    regions, warnings, preserved_regions, override_receipts = self.load_ocr_page(path, original_hash, ocr_identity)
+                    self.resume_store.page(self.journal, path, ocr_ready=True)
                     self.control.checkpoint()
                     self.event(path, 'Dịch', 30, index+1, len(files), language=', '.join(sorted({r.language for r in regions})))
                     context = digest([r.text for r in regions])
@@ -458,7 +510,7 @@ class ProcessingManager:
                     if self.options.mode == AGY_MODE and regions:
                         region_index, current_region = 0, regions[0]
                         try:
-                            translations = self.service.translate_regions(regions, context)
+                            translations = batching.for_page(path, regions)
                         except Exception as exc:
                             region_index = getattr(exc, 'region_index', 0)
                             current_region = regions[region_index]
@@ -485,24 +537,33 @@ class ProcessingManager:
                     self.event(path, 'Đang lưu', 95, index+1, len(files))
                     if file_digest(path) != original_hash:
                         raise IOError('Ảnh nguồn thay đổi trong khi xử lý; không ghi kết quả')
-                    if not regions and self.options.output_format == 'original':
-                        self._copy_original(path, destination, original_hash)
-                    else:
-                        warnings += atomic_save(rendered, destination, self.options.quality, overwrite=False)
-                    self.cache.put('output-hash', str(destination), file_digest(destination))
-                    self.cache.put('metadata', fingerprint, {'source': str(path), 'output': str(destination),
+                    metadata = {'source': str(path), 'output': str(destination),
                         'size': list(image.size), 'regions': [asdict(r) for r in regions],
                         'preserved_regions': [asdict(r) for r in preserved_regions], 'ocr_overrides': override_receipts,
                         'no_text_to_translate': not regions, 'numeric_validator_version': VALIDATOR_VERSION,
-                        'translations': translations, 'warnings': warnings})
+                        'translations': translations, 'warnings': warnings}
+                    def before_publish(temp):
+                        self.cache.put('metadata', fingerprint, metadata)
+                        self.resume_store.page(self.journal, path, state='publishing', output=str(destination),
+                            output_hash=file_digest(temp), job_id=self.job_id, fingerprint=fingerprint)
+                    if not regions and self.options.output_format == 'original':
+                        self._copy_original(path, destination, original_hash, before_publish)
+                    else:
+                        warnings += atomic_save(rendered, destination, self.options.quality, overwrite=False,
+                                                before_publish=before_publish)
+                    self.cache.put('output-hash', str(destination), file_digest(destination))
+                    self.cache.put('metadata', fingerprint, metadata)
                     self.cache.checkpoint(self.job_id, str(path), 'done', str(destination), fingerprint, '\n'.join(warnings))
+                    self.resume_store.page(self.journal, path, state='done', output=str(destination),
+                        output_hash=file_digest(destination), job_id=self.job_id, fingerprint=fingerprint)
                     self.counts['completed'] += 1
                     self.event(path, 'Hoàn thành', 100, index+1, len(files), output=str(destination), detail='\n'.join(warnings),
                                output_status=TRANSLATED_SUCCESS, image_index=image_indices[str(path)])
                 except ProviderSuspended as exc:
                     # No erasing, fallback publication or failure counter on quota.
                     # Successful receipts remain immutable; retry starts at this page.
-                    pending_paths = [str(p) for p in files[index:]]
+                    done_paths = {p['path'] for p in self.journal['pages'] if p['state'] == 'done'}
+                    pending_paths = [str(p) for p in files[index:] if str(p) not in done_paths]
                     record = dict(job_id=self.job_id, chapter_id=self.chapter_id,
                         image_index=image_indices[str(path)], image_filename=path.name,
                         stage='TRANSLATION', error_code=exc.code, error_message=str(exc),
@@ -563,6 +624,7 @@ class ProcessingManager:
                     self.review_pages.append(review)
                     self.cache.checkpoint(self.job_id, str(path), checkpoint, str(output) if output else '',
                                           fingerprint, json.dumps(review, ensure_ascii=False))
+                    self.resume_store.page(self.journal, path, state=checkpoint)
                     action = 'đã xuất ảnh gốc dự phòng' if output else 'chưa có output hợp lệ'
                     message = f'Trang {image_indices[str(path)]} • {path.name} • {error_stage} • {code} • {action}. {detail}'
                     self.event(path, 'Ảnh gốc dự phòng' if output else 'Lỗi', 100, index+1, len(files),
@@ -577,6 +639,11 @@ class ProcessingManager:
             self.emit({'type': 'fatal', 'detail': str(exc) or type(exc).__name__})
             state = 'error'
         finally:
+            if self.journal:
+                if not pending_paths:
+                    pending_paths = [p['path'] for p in self.journal['pages'] if p['state'] != 'done']
+                self.journal['state'] = 'done' if not pending_paths else state
+                self.resume_store.save(self.journal)
             if self.job_id:
                 self.cache.job(self.job_id, self.options, state)
             self.service.close()
@@ -587,6 +654,7 @@ class ProcessingManager:
                       'files_exported': self.counts['completed'] + self.counts['skipped'] + self.fallback_count,
                       'needs_retry': errors, 'review_pages': self.review_pages, 'job_id': self.job_id,
                       'pending_paths': pending_paths,
+                      'resume_id': self.resume_id,
                       'diagnostic_dir': str(self.diagnostics.directory) if self.diagnostics else None}
             self.emit(result)
             if self.owns_cache:

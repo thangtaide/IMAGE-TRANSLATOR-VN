@@ -267,7 +267,8 @@ class AGYTests(unittest.TestCase):
         provider = self.provider()
         provider.runner = runner
         service = self.service(provider)
-        options = Options(source=str(source), output=str(self.root / 'export'), mode=MODE)
+        # Preserve this test's two-request quota scenario under multi-page defaults.
+        options = Options(source=str(source), output=str(self.root / 'export'), mode=MODE, agy_batch_regions=1)
         manager = ProcessingManager(options, self.cache, ocr=OCRFixture(), service=service,
                                     diagnostic_root=self.root / 'diagnostics')
         result = manager.run()

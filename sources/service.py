@@ -72,7 +72,7 @@ class LocalComicJob:
     def __init__(self, comic: ComicInfo, chapters: list[ChapterInfo], output: Path, options: Options,
                  keep_cached: bool = True, control: JobControl | None = None, emit=lambda _: None,
                  cache: ChapterCache | None = None, database: Path | None = None,
-                 adapter: WebsiteAdapter | None = None, retry_only: bool = False):
+                 adapter: WebsiteAdapter | None = None, retry_only: bool = False, resume_source_id: str | None = None):
         self.comic, self.chapters, self.output = comic, chapters, output
         self.options = Options.from_dict(options.to_dict())
         # Legacy source jobs retain Offline enforcement. The explicitly selected
@@ -87,9 +87,10 @@ class LocalComicJob:
         self.database = database or CACHE / 'online_comics' / 'pipeline.sqlite3'
         self.adapter = adapter
         self.retry_only = retry_only
+        self.resume_source_id = resume_source_id
 
     def run(self) -> dict:
-        result = {'state': 'done', 'chapters_completed': 0, 'chapters_failed': 0,
+        result = {'state': 'interrupted', 'chapters_completed': 0, 'chapters_failed': 0,
                   'chapters_with_warnings': 0, 'images_exported': 0, 'images_failed': 0,
                   'images_total': 0, 'translated_success': 0, 'partial_translation': 0,
                   'fallback_original': 0, 'failed_no_output': 0, 'skipped': 0,
@@ -97,6 +98,7 @@ class LocalComicJob:
         current_directory = None
         manifest = None
         database = None
+        source_record = None
         try:
             if not self.chapters:
                 raise CacheError('Chưa chọn chương nào.')
@@ -110,6 +112,12 @@ class LocalComicJob:
             elif self.comic.comic_id is None:
                 raise SourceError('Chưa xác minh ID truyện gốc để tạo cache tải; không dùng chapter ID thay comic ID.')
             self.output = validate_output(self.output, self.chapters)
+            from core.resume import ResumeStore
+            from sources.resume import save_source_request
+            source_store = ResumeStore(self.database)
+            source_record = save_source_request(source_store, self.comic, self.chapters,
+                self.output, self.options, self.cache, self.resume_source_id)
+            self.emit({'type': 'source_resume_ready', 'resume_id': source_record['id']})
             self.database.parent.mkdir(parents=True, exist_ok=True)
             database = TranslationCache(self.database)
             # Exactly one OCR engine and translation service per batch, reused across chapters.
@@ -122,7 +130,9 @@ class LocalComicJob:
                 self.emit({'type': 'chapter_start', 'chapter_id': chapter.chapter_id,
                            'position': position, 'total_chapters': len(self.chapters)})
                 try:
-                    if self.retry_only:
+                    retry_this = self.retry_only or (self.resume_source_id is not None and
+                        chapter.chapter_id in source_record.get('cached_chapters', {}))
+                    if retry_this:
                         # Retry from verified chapter cache, without HTTP/discovery/CDN.
                         current_directory = self.cache.directory(self.comic, chapter)
                         manifest = self.cache.read(current_directory)
@@ -144,6 +154,8 @@ class LocalComicJob:
                         collection = ImageCollection.discover(chapter.local_source)
                     else:
                         # Recheck per chapter in the worker; UI enablement is not authorization.
+                        if self.resume_source_id:
+                            self.adapter.get_chapter_images(chapter, self.control)
                         decision = self.adapter.download_decision(chapter)
                         if chapter.access_status in (AccessStatus.LOCKED, AccessStatus.RESTRICTED):
                             raise AccessRestricted(decision.reason)
@@ -187,11 +199,13 @@ class LocalComicJob:
                             raise CacheError('Downloader trả nguồn ngoài vùng cache được cấp.')
                         if any(not p.resolve().is_relative_to(collection.root.resolve()) for p in collection.paths):
                             raise CacheError('Ảnh tải nằm ngoài collection.')
-                    if not self.retry_only:
+                    if not retry_this:
                         cached, current_directory, manifest = self.cache.stage(
                             self.comic, chapter, collection, self.control,
                             lambda event: self.emit(dict(event, type='cache', chapter_id=chapter.chapter_id)),
                             download_decision=decision if not local else None)
+                    source_record.setdefault('cached_chapters', {})[chapter.chapter_id] = len(cached.paths)
+                    source_store.save(source_record)
                     # A separate receipt database must have a separate staging area.
                     # Otherwise isolated QA/user profiles can see outputs they cannot verify.
                     namespace = digest(str(self.database.resolve()))[:20]
@@ -200,7 +214,7 @@ class LocalComicJob:
                     data = self.options.to_dict()
                     data.update(output=str(stage), skip_success=True, preserve_structure=True)
                     options, only = cached.request(Options.from_dict(data))
-                    if self.retry_only:
+                    if retry_this:
                         # Reusing successful pages across an explicitly changed
                         # provider keeps their own receipts; never rewrite them.
                         for page in manifest['pages']:
@@ -210,7 +224,8 @@ class LocalComicJob:
                         only = [str(p) for p, page in zip(cached.paths, manifest['pages'])
                                 if page.get('needs_retry') or page.get('error') or not page.get('output')]
                     manager = ProcessingManager(options, database, self.control, ocr=ocr, service=service,
-                                                chapter_id=chapter.chapter_id)
+                                                chapter_id=chapter.chapter_id,
+                                                resume_id=manifest.get('pipeline_resume_id') if retry_this else None)
                     pages_by_path = {str(p): page for p, page in zip(cached.paths, manifest['pages'])}
                     manifest['state'] = 'processing'
                     self.cache.save(current_directory, manifest)
@@ -219,6 +234,9 @@ class LocalComicJob:
                     stages = {}
 
                     def event_received(event: dict) -> None:
+                        if event.get('type') == 'resume_ready':
+                            manifest['pipeline_resume_id'] = event['resume_id']
+                            self.cache.save(current_directory, manifest)
                         if event.get('type') == 'finished':
                             return
                         if event.get('type') == 'fatal':
@@ -237,15 +255,16 @@ class LocalComicJob:
                             page = pages_by_path[event['file']]
                             index = page['index']
                             fallback = event.get('output_status') == FALLBACK_ORIGINAL
+                            receipt_job_id = event.get('receipt_job_id', manager.job_id)
                             destination = contained(self.output, safe_name(self.comic.title, self.comic.comic_id),
                                 f'{chapter.order_index + 1:04d}_' + safe_name(chapter.chapter_title, chapter.chapter_id),
-                                'run_' + manager.job_id[:16], *(['original'] if fallback else []),
+                                'run_' + receipt_job_id[:16], *(['original'] if fallback else []),
                                 f'{index:04d}' + Path(event['output']).suffix)
                             try:
                                 checksum = publish_image(Path(event['output']), destination, self.control,
                                                          (page['width'], page['height']))
                                 page.update(output=str(destination), output_sha256=checksum,
-                                            pipeline_output=event['output'], pipeline_job_id=manager.job_id,
+                                            pipeline_output=event['output'], pipeline_job_id=receipt_job_id,
                                             warnings=event.get('detail', ''), needs_retry=fallback,
                                             output_status=FALLBACK_ORIGINAL if fallback else TRANSLATED_SUCCESS)
                                 if fallback:
@@ -297,7 +316,8 @@ class LocalComicJob:
                                        chapter_id=chapter.chapter_id))
 
                     manager.emit = event_received
-                    summary = manager.run(only)
+                    summary = (manager.run(only) if only else
+                               dict(state='done', skipped=len(manifest['pages']), errors=[]))
                     if summary['state'] == 'paused_provider':
                         pending = set(summary['pending_paths'])
                         for p, page in zip(cached.paths, manifest['pages']):
@@ -364,6 +384,8 @@ class LocalComicJob:
                 result['state'] = 'errors'
             elif result['chapters_with_warnings']:
                 result['state'] = 'completed_with_warnings'
+            elif result['state'] != 'paused_provider':
+                result['state'] = 'done'
         except CancelledError:
             result['state'] = 'cancelled'
             if current_directory and manifest is not None:
@@ -375,6 +397,9 @@ class LocalComicJob:
             result['errors'].append({'chapter_id': None, 'detail': safe_text(exc),
                                      'category': getattr(exc, 'category', 'processing')})
         finally:
+            if source_record:
+                source_record['state'] = 'done' if result['state'] == 'done' else result['state']
+                source_store.save(source_record)
             if database:
                 database.close()
             self.emit({'type': 'job_finished', **result})

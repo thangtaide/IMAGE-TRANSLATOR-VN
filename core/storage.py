@@ -57,6 +57,7 @@ def configure_logging() -> None:
 
 class TranslationCache:
     def __init__(self, path: Path | None = None):
+        self.path = Path(path or CACHE / "state.sqlite3")
         self.connection = sqlite3.connect(path or CACHE / "state.sqlite3", check_same_thread=False)
         self.lock = threading.RLock()
         self.connection.execute("PRAGMA journal_mode=WAL")

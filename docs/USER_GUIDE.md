@@ -1,5 +1,18 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Khi Kuaikan dừng ở IMAGE_LIST_READY (08/11/2026)
+
+`Phân tích ảnh chương` chỉ tìm URL ảnh, không tải bitmap. Sau khi phân tích,
+giữ chương được chọn và bấm **Tải và dịch** nếu nút đã bật. Khi đó worker mới
+tải/cache ảnh và đưa vào pipeline dịch. Tiến độ 0% trước bước này là bình thường.
+
+Xem cột **Điều kiện tải**: `ALLOWED_BY_USER_POLICY` cho phép theo cấu hình chủ
+ứng dụng dù **quyền nội dung** còn UNKNOWN; đây không phải giấy phép chính thức.
+`DOWNLOAD_UNKNOWN` là quyết định khác: chưa đủ điều kiện tải, nút bị tắt và lý
+do nằm dưới bảng/tooltip. Không bỏ qua UNKNOWN về truy cập, VIP hoặc hạn chế.
+Nếu nút đang bật nhưng bấm không chạy, cần lưu trạng thái sau khi bấm và lỗi
+cụ thể; không chỉ chụp dòng IMAGE_LIST_READY trước khi bấm.
+
 ## AI Gemini AGY — trạng thái Stage3B
 
 Lượt đầu lỗi giao thức INVALID_RESPONSE; lượt bổ sung được duyệt đã OCR→AGY→ảnh
@@ -228,3 +241,35 @@ resume cần receipt và database đúng job. Không xóa ảnh nguồn hoặc c
 chương còn fallback. Bản dịch Argos pivot vẫn có hạn chế ngữ nghĩa; kiểm tra
 preview, đặc biệt tên riêng/ngày tháng. Công việc chất lượng dịch và portable
 EXE là các stage sau, chưa thay model/provider mặc định ở Stage 1.
+
+## Stage 3C — batch nhiều trang, đóng/mở và tiếp tục
+
+1. Chọn phương thức ở cửa sổ chính. Offline/Argos vẫn mặc định, MyMemory dùng
+   API từng request như trước. Chỉ AGY gom nhiều trang trong cùng chương/lượt.
+2. Cài đặt → AGY ký tự mục tiêu/batch (mặc định3.000), vùng tối đa (60),
+   timeout, số lượt tối đa/job và checkbox context. App có thể OCR trước vài
+   trang, sau đó mới xuất; trạng thái batch ghi số trang/vùng/ký tự thực tế.
+3. Batch cuối được gửi khi hết chương. Trang không có chữ giữ nguyên nội dung;
+   hoàn tất pipeline không đồng nghĩa mọi trang đều có chữ được dịch.
+4. Quota/rate/auth/protocol/timeout dừng gửi và giữ OCR/cache/output. × chỉ ẩn
+   thông báo. Chọn phương thức khác nếu muốn rồi chủ động Tiếp tục; không tự đổi.
+5. Sau khi mở lại: tab thư mục có nút Khôi phục công việc còn dở. Nút này chỉ
+   nạp cấu hình/pending, chưa chạy provider. Chọn phương thức rồi Tiếp tục.
+   Tab ảnh/URL có Tiếp tục công việc đã lưu (ưu tiên cache); chọn phương thức
+   chung trước khi bấm. Chương đã cache được xác minh hash, không truy cập CDN.
+   Chương còn chưa tải giữ nguyên lựa chọn cũ và cần kiểm tra access/policy mới
+   trước khi tải. Không tự tải khi vừa mở app hoặc chỉ phân tích URL.
+6. Output thành công được xác minh bitmap/hash/receipt, giữ recipe/provider cũ.
+   Chỉ phần pending dùng phương thức vừa chọn. Không đổi OCR/font/glossary/
+   cấu hình render trong cùng resume; nếu cần, tạo lượt mới ở output khác.
+7. Lỗi số vẫn có thể xuất ảnh gốc fallback và cần retry. Không gọi đó là dịch
+   thành công; không phục hồi trang111 production trong Stage3C.
+
+Ngữ cảnh chỉ gồm tối đa8vùng dịch trước đã qua validation, không phải ground
+truth hoặc quan hệ nhân vật đã xác nhận. Giới hạn1.600ký tự JSON, không gửi lại
+toàn chương. Có thể tắt trong Cài đặt; thay context/threshold tạo identity cache
+AGY khác. Một trang chưa đủ mọi vùng hợp lệ sẽ không được inpaint/render dở.
+
+Giữ cả database và thư mục journal bên cạnh khi sao lưu. Không xóa journal hoặc
+cache để chữa lỗi resume. Job lịch sử chưa có journal không tự được chuyển đổi.
+Bốn EXE cũ không chứa Stage3C; dùng source, chưa có build mới.

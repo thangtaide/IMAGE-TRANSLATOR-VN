@@ -1,5 +1,22 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## IMAGE_LIST_READY, 0%, chưa có ảnh tải (08/11/2026)
+
+- Đây là kết thúc **phân tích**, chưa phải lỗi download. Giữ checkbox chương,
+  xem cột Điều kiện tải, sau đó bấm **Tải và dịch** khi nút được bật.
+- `ALLOWED_BY_USER_POLICY` + "quyền nội dung vẫn UNKNOWN" không chặn tải:
+  UNKNOWN này thuộc bằng chứng quyền, không phải quyết định cuối của ứng dụng.
+- `DOWNLOAD_UNKNOWN`: đọc lý do dưới bảng/tooltip. Ví dụ: chưa xác minh PUBLIC,
+  chưa phân tích URL an toàn, hoặc `verified_only` thiếu bằng chứng phù hợp.
+  Không đổi policy/giả quyền chỉ để bật nút. VIP/locked/restricted vẫn bị chặn.
+- Nếu đã bấm nút được bật nhưng không chạy: ghi ID chương, trạng thái nút,
+  cột Điều kiện tải và tooltip, thông báo sau khi bấm, giờ chạy, chạy source hay
+  EXE nào. Không gửi cookie/token hoặc signed URL. Chỉ cần dữ liệu của lượt lỗi;
+  không tải lại chương hoặc nộp lại toàn bộ DOM đã có.
+- Điều tra chương277859/thứ tự10 chưa có response/log của lượt107 URL để kết
+  luận lỗi HTTP/JavaScript hoặc quyền hiện tại. Không tự coi thiếu log là mạng PASS.
+  Xem `docs/IMAGE_LIST_DOWNLOAD_FLOW_REPORT.md`.
+
 ## Stage3B — AGY
 
 - AGY_NOT_FOUND: app chưa tìm được executable đã cài; nhập đường dẫn.exe trong
@@ -115,3 +132,33 @@ Hai lỗi cũ của chương 274872 đã điều tra ở
 [NUMERIC_INTEGRITY_INVESTIGATION.md](NUMERIC_INTEGRITY_INVESTIGATION.md). Không
 gán raw target của lần retry tương lai cho hai lần lỗi lịch sử. Chưa phục hồi
 hai trang thật trong Stage 1.
+
+## Stage3C — batch và journal resume
+
+- OCR chạy trước khi xuất nhiều trang là bình thường. AGY batch có ngưỡng3.000
+  ký tự/60vùng, tối đa16trang có chữ; không gửi batch này trực tiếp sang MyMemory.
+- INVALID_RESPONSE: ID thiếu/lạ/trùng, JSON/NDJSON sai, output lớn hoặc tool use
+  bất thường. Dừng request; không auto retry hoặc nới parser. Diagnostic cục bộ
+  không chứa raw stderr/OAuth/chain-of-thought. Không dùng × để resume.
+- NUMERIC_MISMATCH: vẫn giữ literal-numbers-v2-signed. Vùng sai không cache hợp
+  lệ/không dùng làm context. Trang lỗi fallback; các trang hợp lệ khác tiếp tục.
+- RESUME_SOURCE_CHANGED: nguồn/cache thay hash; dừng, giữ output. Không tự tải
+  lại hoặc sửa checkpoint bằng tay.
+- RESUME_RECEIPT_CHANGED / RESUME_PUBLICATION_CHANGED: output, hash hoặc receipt
+  không khớp. Không ghi đè; đối chiếu bản sao lưu và diagnostic.
+- RESUME_RECIPE_CHANGED: khôi phục cấu hình OCR/render/font/glossary của journal.
+  Có thể đổi phương thức/provider khi tiếp tục, nhưng không âm thầm đổi recipe
+  output cũ. Muốn đổi render, dùng lượt mới/output khác.
+- RESUME_INVALID: journal sai ID/phiên bản/quá16MB. Giữ nguyên file để điều tra.
+- RESUME_CACHE_MISSING / RESUME_CACHE_INCOMPLETE: cache đã được ghi nhận đầy đủ
+  nhưng hiện không còn hợp lệ; dừng. Khác với chương chưa tải từ đầu: chương đó
+  chỉ được tải sau lệnh tiếp tục và kiểm tra quyền truy cập/policy mới.
+- AGY_BATCH_CONFIG / INVALID_REQUEST: vượt giới hạn cấu hình, vùng6.000ký tự,
+  tổng12.000ký tự hoặc payload128KB. Không cắt mất chữ; xem lại vùng OCR/cấu hình.
+- AGY_CACHE_INTEGRITY / AGY_PAGE_INCOMPLETE: thiếu hoặc không khớp receipt vùng;
+  không render trang dở. Giữ journal/database để kiểm tra, không xóa cache.
+
+Source job lưu journal trước khi tải/OCR; pipeline lưu publication intent trước
+atomic publish. Nếu mất điện sau publish nhưng trước checkpoint, resume có thể
+đối chiếu hash/bitmap và hoàn tất receipt cũ mà không dịch lại. Kiểm thử này dùng
+process/crash fixture, không phải nghiệm thu cắt điện máy thật.

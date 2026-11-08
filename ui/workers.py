@@ -14,11 +14,13 @@ from core.storage import TranslationCache
 class ProcessingWorker(QThread):
     event = Signal(dict)
 
-    def __init__(self, options: Options, only: list[str] | None = None, parent=None, cache_path: Path | None = None):
+    def __init__(self, options: Options, only: list[str] | None = None, parent=None, cache_path: Path | None = None,
+                 resume_id: str | None = None):
         super().__init__(parent)
         self.options, self.only = options, only
         self.control = JobControl()
         self.cache_path = cache_path
+        self.resume_id = resume_id
 
     def run(self) -> None:
         cache = None
@@ -29,7 +31,8 @@ class ProcessingWorker(QThread):
             self.control.checkpoint()
             if self.cache_path is not None:
                 cache = TranslationCache(self.cache_path)
-            manager = ProcessingManager(self.options, cache=cache, control=self.control, emit=self.event.emit)
+            manager = ProcessingManager(self.options, cache=cache, control=self.control, emit=self.event.emit,
+                                        resume_id=self.resume_id)
             manager.run(self.only)
         except CancelledError:
             self.event.emit({'type':'finished', 'state':'cancelled', 'errors':[], 'total':0,

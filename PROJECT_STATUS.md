@@ -1,5 +1,50 @@
 # Trạng thái Image Translator VN
 
+## Mới nhất — Stage3C multi-page AGY và persistent resume, 08/11/2026
+
+**STAGE_3C_COMPLETED_WITH_WARNINGS**. Đã thêm planner OCR nhiều trang dùng engine/
+cache/renderer cũ, batch ID job/chapter/page/region/reading order; mặc định3.000
+ký tự/60vùng, tối đa16trang có chữ,6.000ký tự/vùng,12.000ký tự cứng,128KB input/
+1MB stdout. Trang còn vừa được giữ nguyên; oversized page chỉ chia tại vùng.
+Context tùy chọn tối đa8vùng đã validated/1.600ký tự JSON; cache có version/context.
+Numeric guard literal-numbers-v2-signed không đổi, không dùng date handler QA.
+
+Journal JSON version1 cạnh DB không migration SQLite, lưu OCR/region receipt và
+publication intent. Resume xác minh source/output/hash/recipe, giữ receipt cũ,
+chỉ dịch phần pending; hỗ trợ đổi AGY→Argos/MyMemory, restart và crash lúc publish.
+UI không tự gửi online khi mở. Source resume ưu tiên cache; chương chưa tải được
+kiểm tra access/policy lại, chỉ trong lệnh tiếp tục chủ động. Không nới downloader.
+
+Người dùng duyệt đúng1liveQA:3trang tổng hợp/3vùng OCR thật/17ký tự,1AGY CLI,
+3ảnh export/0fallback/0retry. Không có request bổ sung.60vùng/3.000ký tự và carryover
+nhiều batch mới được test local/mock; chưa nghiệm thu cả chương/độ chính xác nghĩa.
+Pytest349PASS/10SKIPPED/0FAIL; unittest349PASS/10SKIPPED/0FAIL (359ca), thêm31test.
+Windows GUI restart/source batch mock PASS; Windows ảnhđơn/folder/OCR+Argos thật
+PASS;595/595file bảo vệ giữ hash,120output/119normal+fallback111 nguyên vẹn.
+Không build/cài/tải model/ảnh hoặc chạy jobproduction. Journals áp dụng từ lượt
+chạy mới, không tự migration job lịch sử. Xem
+`docs/STAGE3C_MULTIPAGE_BATCH_RESUME_REPORT.md`, logs/stage3c-20261108T052551Z.
+
+## Mới nhất — điều tra IMAGE_LIST_READY, 08/11/2026
+
+**DIAGNOSIS_COMPLETE / LIVE_CASE_NOT_VERIFIED**. Chương 第8话 驯马 là277859,
+thứ tự10 trong topic DOM đã lưu; snapshot có PUBLIC/free/not-locked/not-VIP.
+Chưa tìm thấy reader response/log của lượt107 URL, nên không khẳng định quyền
+hiện tại hoặc HTTP/JavaScript PASS. Không gửi request website/ảnh/provider.
+
+Source chứng minh IMAGE_LIST_READY chỉ hoàn tất discovery, không gọi process;
+cần giữ chương chọn rồi bấm Tải và dịch khi decision.allowed. Câu "quyền nội
+dung vẫn UNKNOWN" thuộc ALLOWED_BY_USER_POLICY, không phải gate DOWNLOAD_UNKNOWN.
+Nhánh images_ready giữ nguyên từ Stage2, adapter/transport/policy không đổi bởi
+Stage3A/3B. Chưa chứng minh bug điều kiện/worker nên **không sửa production
+source, không thêm auto-download hoặc nới access/policy**.
+
+Thêm9 test local/mock: discovery không tải, phân biệt UNKNOWN, VIP/verified_only,
+3phương thức, QThread→download bitmap/cache/progress, lỗi worker và controls.
+Pytest318PASS/10SKIPPED/0FAIL; unittest318PASS/10SKIPPED/0FAIL (328ca).
+Xem `docs/IMAGE_LIST_DOWNLOAD_FLOW_REPORT.md` và
+`logs/hotfix-image-list-20261108T045247Z`. Không build/commit hoặc chạy jobproduction.
+
 ## Mới nhất — Stage3B AGY, 08/11/2026
 
 **STAGE_3B_COMPLETED_WITH_WARNINGS**. AGY1.5.3 tìm thấy trong

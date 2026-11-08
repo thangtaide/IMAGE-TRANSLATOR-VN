@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
     QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget)
 
-from core.paths import CONFIG, ROOT
+from core.paths import CACHE, CONFIG, ROOT
 from core.pipeline import JobControl
 from core.types import CancelledError, Options
 from sources.cache import atomic_json
@@ -84,10 +84,19 @@ class ComicSourceWorker(QThread):
                 prepare_inference_runtime()
                 self.control.checkpoint()
                 LocalComicJob(**self.request, control=self.control, emit=self.event.emit).run()
+            elif self.action == 'restore':
+                from sources.resume import restore_source_request
+                from core.runtime import prepare_inference_runtime
+                self.control.checkpoint()
+                request = restore_source_request(self.request['record'], self.request['database'],
+                                                 self.request['options'])
+                self.event.emit(dict(type='collection', comic=request['comic'], chapters=request['chapters']))
+                prepare_inference_runtime()
+                LocalComicJob(**request, control=self.control, emit=self.event.emit).run()
             else:
                 raise SourceError('Tác vụ nguồn ảnh không được hỗ trợ.')
         except CancelledError:
-            if self.action == 'process':
+            if self.action in ('process', 'restore'):
                 self.event.emit({'type': 'job_finished', 'state': 'cancelled', 'chapters_completed': 0,
                                  'chapters_failed': 0, 'images_exported': 0, 'images_failed': 0,
                                  'errors': [], 'outputs': []})
@@ -97,7 +106,7 @@ class ComicSourceWorker(QThread):
             logging.getLogger(__name__).exception('Comic source action failed: %s', self.action)
             self.event.emit({'type': 'source_error', 'category': getattr(exc, 'category', 'source'),
                              'phase': phase, 'chapter_id': active_chapter, 'detail': str(exc) or type(exc).__name__})
-            if self.action == 'process':
+            if self.action in ('process', 'restore'):
                 self.event.emit({'type': 'job_finished', 'state': 'error', 'chapters_completed': 0,
                                  'chapters_failed': 0, 'images_exported': 0, 'images_failed': 0,
                                  'errors': [{'chapter_id': None, 'detail': str(exc)}], 'outputs': []})
@@ -117,6 +126,7 @@ class ComicSourcesPanel(QWidget):
         self.database = database
         self.options_factory = options_factory
         self.adapter = None
+        self.source_resume_id = None
         self.analysis_state = AnalysisState.IDLE
         self.metadata_state = AnalysisState.IDLE
         self.chapter_state = AnalysisState.IDLE
@@ -133,6 +143,7 @@ class ComicSourcesPanel(QWidget):
         self.provider_paused = False
         self.paused_chapter = None
         self.review_pages = []
+        self.source_resume_id = None
         self.busy = False
         self.position = 1
         self.total_chapters = 1
@@ -223,6 +234,14 @@ class ComicSourcesPanel(QWidget):
         self.cancel = QPushButton('Hủy')
         self.retry = QPushButton('Thử lại chương lỗi / chưa xong')
         self.open_output = QPushButton('Mở kết quả')
+        self.restore_cached = QPushButton('Tiếp tục công việc đã lưu (ưu tiên cache)')
+        self.restore_cached.setToolTip('Chỉ chạy khi bấm. Giữ ảnh cache hợp lệ; chương chưa tải sẽ được xác minh lại quyền truy cập và policy trước khi tải.')
+        self.restore_cached.clicked.connect(self.restore_cached_job)
+        controls.addWidget(self.restore_cached, 2, 0, 1, 4)
+        from core.resume import ResumeStore
+        self.resume_store = ResumeStore(database or CACHE / 'online_comics/pipeline.sqlite3')
+        self.restorable = self.resume_store.latest('source')
+        self.restore_cached.setVisible(bool(self.restorable))
         self.review_button = QPushButton('Trang cần xem lại / log')
         self.review_button.setEnabled(False)
         self.review_button.clicked.connect(self.show_review)
@@ -259,6 +278,7 @@ class ComicSourcesPanel(QWidget):
         self.set_busy(False)
 
     def invalidate_collection(self, *_):
+        self.source_resume_id = None
         self.loaded_input = None
         self.comic = None
         self.chapters = []
@@ -279,6 +299,10 @@ class ComicSourcesPanel(QWidget):
 
     def source_changed(self, *_, clear=True):
         online = self.kind.currentIndex() == 2
+        if hasattr(self, 'resume_store'):
+            self.restorable = self.resume_store.latest('source', lambda data:
+                (data.get('comic', {}).get('site_id') != 'local') == online)
+            self.restore_cached.setVisible(bool(self.restorable))
         single = self.kind.currentIndex() == 0
         if clear:
             self.invalidate_collection()
@@ -289,7 +313,7 @@ class ComicSourcesPanel(QWidget):
         self.browse.setText('Chọn ảnh' if single else 'Chọn thư mục')
         self.policy.setText('Phân tích link để xem thông tin và danh sách chương. '
                             'Điều kiện đọc và tải được kiểm tra riêng cho từng chương.'
-                            if online else 'Ảnh gốc luôn được giữ nguyên. Dịch Offline; không tự tải model.')
+                            if online else 'Ảnh gốc luôn được giữ nguyên. Phương thức dịch lấy từ cửa sổ chính; không tự tải model.')
         self.import_local.setVisible(online)
         self.retry_analysis.setVisible(online)
         self.analyze_images.setVisible(online)
@@ -397,6 +421,7 @@ class ComicSourcesPanel(QWidget):
         self.retry_analysis.setEnabled(not self.busy and bool(self.comic))
         self.analyze_images.setEnabled(not self.busy and online and bool(selected) and self.adapter is not None)
         self.retry.setEnabled(not self.busy and bool(self.failed_ids))
+        self.restore_cached.setEnabled(not self.busy)
 
     def set_busy(self, busy):
         self.busy = busy
@@ -457,6 +482,9 @@ class ComicSourcesPanel(QWidget):
 
     def handle_event(self, event):
         kind = event.get('type')
+        if kind == 'source_resume_ready':
+            self.source_resume_id = event['resume_id']
+            return
         chapter_id = event.get('chapter_id')
         row = next((i for i, chapter in enumerate(self.chapters) if chapter.chapter_id == chapter_id), None)
         if kind in ('metadata', 'collection'):
@@ -562,6 +590,10 @@ class ComicSourcesPanel(QWidget):
             self.paused_chapter = chapter_id
             self.provider_notice.show_error(event)
             self.status.setText(event['code'] + ' • Tạm dừng; không chuyển provider tự động.')
+        elif kind == 'pipeline' and event.get('pipeline_event_type') == 'agy_batch':
+            self.status.setText(f"AGY: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+            if row is not None:
+                self.table.item(row, 5).setText('Đang dịch batch nhiều trang')
         elif kind == 'pipeline' and event.get('stage'):
             if event.get('review'):
                 self.review_pages.append(event['review'])
@@ -601,7 +633,7 @@ class ComicSourcesPanel(QWidget):
         elif kind == 'job_finished':
             self.last_result = event
             if event['state'] == 'paused_provider':
-                self.status.setText('Tạm dừng Online Free. Đổi phương thức nếu muốn rồi Tiếp tục chương hiện tại từ cache. '
+                self.status.setText('Tạm dừng dịch. Đổi phương thức nếu muốn rồi Tiếp tục chương hiện tại từ cache. '
                     'Chương chưa bắt đầu được giữ trong lựa chọn, không tự tải tiếp.')
                 return
             self.review_pages = event.get('review_pages', self.review_pages)
@@ -631,6 +663,21 @@ class ComicSourcesPanel(QWidget):
             self.pause.setEnabled(False)
             self.resume.setEnabled(True)
             self.status.setText('Đã yêu cầu tạm dừng tại checkpoint an toàn.')
+
+    def restore_cached_job(self):
+        if self.busy:
+            return
+        record = self.resume_store.read(self.source_resume_id) if self.source_resume_id else self.restorable
+        if not record:
+            self.status.setText('Không có journal nguồn để khôi phục.')
+            return
+        self.options = self.options_factory() if self.options_factory else self.options
+        self.output.setText(record['output'])
+        self.processing_state = ProcessingState.TRANSLATING
+        self.provider_paused = False
+        self.status.setText('Đang xác minh cache/output; chương chưa tải sẽ được kiểm tra truy cập và policy trước khi tải...')
+        self.launch('restore', dict(record=record, database=self.database or CACHE / 'online_comics/pipeline.sqlite3',
+                                   options=self.options))
 
     def resume_job(self):
         if self.provider_paused and not self.busy:

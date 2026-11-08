@@ -28,7 +28,9 @@ class SettingsDialog(QDialog):
         for title, name, low, high in [('Cỡ chữ tối thiểu', 'font_min', 4, 80), ('Cỡ chữ tối đa', 'font_max', 8, 200),
                 ('Khoảng cách dòng', 'line_spacing', 0, 20), ('Viền chữ', 'stroke', 0, 5),
                 ('Nới mask (px)', 'mask_expand', 0, 8), ('Chất lượng JPEG/WEBP', 'quality', 10, 100),
-                ('Tile OCR (px)', 'tile_size', 512, 2400)]:
+                ('Tile OCR (px)', 'tile_size', 512, 2400),
+                ('AGY ký tự mục tiêu/batch', 'agy_batch_chars', 100, 12000),
+                ('AGY vùng tối đa/batch', 'agy_batch_regions', 1, 60)]:
             widget = QSpinBox()
             widget.setRange(low, high)
             widget.setValue(getattr(options, name))
@@ -83,6 +85,9 @@ class SettingsDialog(QDialog):
         self.diagnostic_text = QCheckBox('Lưu văn bản OCR/bản dịch bị lỗi trong diagnostic cục bộ (giới hạn độ dài)')
         self.diagnostic_text.setChecked(options.diagnostic_text)
         outer.addWidget(self.diagnostic_text)
+        self.agy_context = QCheckBox('AGY: mang theo tối đa1600ký tự ngữ cảnh đã qua validation')
+        self.agy_context.setChecked(options.agy_context)
+        outer.addWidget(self.agy_context)
         note = QLabel('MyMemory API ẩn danh: 5.000 ký tự/ngày, tối đa 500 byte/request.\n'
                       'Online Free gửi OCR ra ngoài; MyMemory có thể lưu và chia sẻ với đối tác MT.\n'
                       'Chỉ dùng endpoint LibreTranslate bạn có quyền sử dụng miễn phí. Không nhập API key.\n'
@@ -127,6 +132,7 @@ class SettingsDialog(QDialog):
         for name, widget in self.fields.items():
             setattr(self.options, name, widget.value())
         self.options.diagnostic_text = self.diagnostic_text.isChecked()
+        self.options.agy_context = self.agy_context.isChecked()
         self.options.agy_executable = self.agy_executable.text().strip()
         self.options.agy_model = model
         for name, combo in self.combos.items():

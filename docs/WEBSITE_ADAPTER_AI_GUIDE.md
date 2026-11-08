@@ -1,5 +1,21 @@
 # Website Adapter AI Guide — Image Translator VN
 
+## IMAGE_LIST_READY và lệnh tải chủ động — kiểm chứng 08/11/2026
+
+Discovery không tạo download intent: `ComicSourceWorker('images')` chỉ emit
+`images_ready`; `ComicSourcesPanel.handle_event` lưu danh sách, tính decision,
+`refresh_start` bật/tắt nút. Không nối thẳng IMAGE_LIST_READY sang download.
+Người dùng bấm Tải và dịch → `begin` → `launch('process')` → LocalComicJob
+kiểm tra lại policy → adapter.download_chapter. Dán link/chọn/phân tích không tải.
+
+Phân biệt content_permission UNKNOWN, access_status UNKNOWN và DownloadState.UNKNOWN.
+Theo default_allow_public hiện có, PUBLIC + safe URLs + không có hạn chế áp dụng
+có thể ALLOWED_BY_USER_POLICY đồng thời content_permission UNKNOWN. Không suy
+permission từ manifest, không chuyển access UNKNOWN thành PUBLIC bằng số URL.
+Tests `tests/test_image_list_download_flow.py` dùng Qt thật + mock transport,
+không là bằng chứng quyền hoặc live download. Báo cáo chi tiết:
+`docs/IMAGE_LIST_DOWNLOAD_FLOW_REPORT.md`. Không sửa pipeline/provider trong lượt này.
+
 ## Stage3B — AGY và pipeline nguồn ảnh
 
 Nguồn ảnh/URL vẫn dùng pipeline chung; LocalComicJob chỉ mở AGY khi người dùng
@@ -1039,3 +1055,26 @@ chỉ resume current cached chapter, không tự tải chương tiếp. Khi prov
 phần pending có recipe/job identity mới, trang cũ giữ receipt riêng. Không sửa
 parser/website access policy để giải quyết quota dịch. Gemini chưa triển khai.
 Xem STAGE3A_ONLINE_FREE_TRANSLATION_REPORT.md về giới hạn cross-restart resume.
+
+## Stage3C — source resume và AGY multi-page (08/11/2026)
+
+Không viết OCR/MT trong adapter. LocalComicJob tạo source journal qua
+`sources/resume.py`; `core/resume.py:ResumeStore` lưu JSON có version cạnh DB,
+không migration SQLite. Journal nguồn giữ comic/chapter order/cache root và
+đếm trang đã cache đầy đủ. `restore_source_request` chạy trong worker, xác minh
+ảnh nguồn/output trước inference. Chương đã cache không discovery/CDN lại;
+chương chưa tải gọi adapter.get_chapter_images rồi download_decision lại, chỉ
+trong job tiếp tục mà người dùng yêu cầu. UNKNOWN/VIP/restriction không được nới.
+
+`core/multipage.py` gom OCR từ ProcessingManager.load_ocr_page, không tạo engine
+thứ2. IDs gồm job/chapter scope, source hash, page, region và reading order.
+Batch event chưa có index/percent của một trang: UI xử lý riêng
+`pipeline_event_type=agy_batch`; không coi đó là image-complete hoặc download.
+Trang hoàn tất cũ phát receipt_job_id gốc để publisher không đổi run/recipe khi
+phục hồi cửa sổ crash giữa xuất file và ghi manifest.
+
+Giữ source/cache/output journal khi thêm adapter mới. Kiểm thử restart khi đang
+OCR, quota, trước/sau atomic publish và trước manifest save. Không tự download
+khi mở app; user phải chọn phương thức và yêu cầu tiếp tục. Bộ test
+`tests/test_multipage_resume.py` phân biệt fake website/CLI, fresh Python process,
+GUI Windows và live AGY3trang; không gọi fixture là live Kuaikan E2E.

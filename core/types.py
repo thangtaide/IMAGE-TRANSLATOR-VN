@@ -53,6 +53,9 @@ class Options:
     agy_model: str = 'gemini-3.8-flash-medium'
     agy_timeout: int = 90
     agy_max_requests: int = 64
+    agy_batch_chars: int = 3000
+    agy_batch_regions: int = 60
+    agy_context: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

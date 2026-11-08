@@ -51,6 +51,8 @@ class MainWindow(QMainWindow):
         self.pending_options = None
         self.provider_paused = False
         self.provider_pending = []
+        self.resume_id = None
+        self.pending_journal = None
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
@@ -74,6 +76,8 @@ class MainWindow(QMainWindow):
         config = QVBoxLayout(self.folder_inputs)
         self.source = QLineEdit(self.options.source)
         self.output = QLineEdit(self.options.output)
+        self.source.textChanged.connect(self.clear_resume_intent)
+        self.output.textChanged.connect(self.clear_resume_intent)
         for label, widget, title_text in [('THƯ MỤC ẢNH NGUỒN', self.source, 'Chọn thư mục'),
                                           ('THƯ MỤC XUẤT', self.output, 'Chọn nơi lưu')]:
             row = QHBoxLayout()
@@ -148,6 +152,11 @@ class MainWindow(QMainWindow):
         cache = TranslationCache(self.cache_path)
         self.pending_options = cache.pending_job()
         cache.close()
+        from core.resume import ResumeStore
+        self.pending_journal = ResumeStore(self.cache_path).latest('pipeline')
+        if self.pending_journal:
+            self.pending_options = Options.from_dict(self.pending_journal['options'])
+            self.resume_previous.setText('Khôi phục công việc còn dở (không tự chạy)')
         self.resume_previous.setVisible(self.pending_options is not None)
         controls = QGridLayout()
         controls.setSpacing(8)
@@ -317,12 +326,18 @@ class MainWindow(QMainWindow):
         self.pause_seconds = 0
         self.paused_at = None
         self.current.setText('Đang quét thư mục và kiểm tra model...')
-        self.worker = ProcessingWorker(options, only, self, cache_path=self.cache_path)
+        self.worker = ProcessingWorker(options, only, self, cache_path=self.cache_path, resume_id=self.resume_id)
         self.worker.event.connect(self.handle_event)
         self.worker.finished.connect(self.worker_finished)
         self.set_running(True)
         self.timer.start()
         self.worker.start()
+
+    def clear_resume_intent(self, *_):
+        # Choosing a new input/output starts a new work scope, retaining the old journal.
+        self.resume_id = None
+        self.provider_paused = False
+        self.provider_pending = []
 
     def set_running(self, running: bool) -> None:
         self.config_panel.setEnabled(not running)
@@ -339,6 +354,12 @@ class MainWindow(QMainWindow):
 
     def handle_event(self, event: dict) -> None:
         kind = event.get('type')
+        if kind == 'resume_ready':
+            self.resume_id = event['resume_id']
+            return
+        if kind == 'agy_batch':
+            self.current.setText(f"AGY: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+            return
         if kind == 'provider_paused':
             self.provider_paused = True
             self.provider_pending = list(event['pending_paths'])
@@ -359,6 +380,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Không thể xử lý', event['detail'])
             return
         if kind == 'finished':
+            if event['state'] == 'done':
+                self.resume_id = None
+            elif event.get('pending_paths'):
+                self.provider_pending = event['pending_paths']
+                self.provider_paused = True
             self.failed = event['errors']
             self.review_pages = event.get('review_pages', self.review_pages)
             self.review_button.setEnabled(bool(self.review_pages))
@@ -506,6 +532,12 @@ class MainWindow(QMainWindow):
             self.structure.setChecked(p.preserve_structure)
             self.allow_fallback.setChecked(p.allow_online_fallback)
             self.current.setText('Đã khôi phục cấu hình. Bấm Bắt đầu dịch; ảnh thành công có checksum hợp lệ sẽ được bỏ qua.')
+            if self.pending_journal:
+                self.resume_id = self.pending_journal['id']
+                self.provider_pending = [p['path'] for p in self.pending_journal['pages'] if p['state'] != 'done']
+                self.provider_paused = True
+                self.continue_button.setEnabled(bool(self.provider_pending))
+                self.current.setText('Đã khôi phục phần còn dở. Chọn phương thức rồi bấm Tiếp tục; chưa gửi dữ liệu online.')
 
     def closeEvent(self, event) -> None:
         for panel in (self.image_panel, self.url_panel):

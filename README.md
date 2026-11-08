@@ -251,3 +251,20 @@ Các unit test workflow dùng OCR/MT fixture riêng trong `tests/test_core.py`; 
 Xem `logs/install.log`: pip không kết nối được proxy (WinError 10061). `logs/pytest-attempt.log` và `logs/build-attempt.log` ghi thiếu module. `logs/online-probe.json` ghi thử provider thật không thành công. Cần kết nối hợp lệ được môi trường cho phép, hoặc wheelhouse đầy đủ đã được chuẩn bị cho Python/Windows tương ứng. `install.bat` hỗ trợ wheelhouse cục bộ và không tự tắt proxy/chính sách mạng.
 
 Khi điều kiện này được giải quyết, đọc PROJECT_STATUS, cài đủ requirements, chạy pip check, tải các model trong bảng qua thao tác riêng, chạy integration thật, sửa lỗi tương thích phát hiện được, rồi mới build và nghiệm thu GUI/EXE. Chưa có kết quả cho các bước đó để tuyên bố hoàn tất.
+
+## Stage 3C: batch AGY nhiều trang và resume bền vững
+
+Bản source: AGY gom theo thứ tự trang, mục tiêu3.000ký tự/60vùng, giữ trang
+còn vừa batch; trang quá lớn chỉ chia tại ranh giới vùng. Có giới hạn bổ sung
+16trang có chữ/batch,6.000ký tự/vùng,12.000ký tự cứng và128KB payload; output
+CLI tối đa1MB. Cấu hình AGY trong Cài đặt; Offline vẫn mặc định.
+
+Journal riêng cạnh database (`<tên-db>-resume-v1/`) lưu công việc chưa xong.
+Mở app không tự gửi mạng: ở tab thư mục bấm Khôi phục công việc, chọn phương
+thức rồi Tiếp tục. Tab ảnh/URL có Tiếp tục công việc đã lưu (ưu tiên cache).
+Ảnh cache hợp lệ không tải lại; chương đã chọn nhưng chưa tải được kiểm tra
+access/policy lại trước khi tải, chỉ sau lệnh tiếp tục của người dùng.
+
+Không thay numeric guard/date handler hoặc model; không build EXE. Journal
+được tạo cho lượt chạy mới; không tự migration/chạy lại job production cũ.
+Xem `docs/STAGE3C_MULTIPAGE_BATCH_RESUME_REPORT.md` về bằng chứng và giới hạn.
