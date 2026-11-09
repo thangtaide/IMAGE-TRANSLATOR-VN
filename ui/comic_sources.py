@@ -6,16 +6,18 @@ import logging
 import time
 from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import QThread, Qt, QUrl, Signal, QSignalBlocker
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog,
-    QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton, QTableWidget,
+    QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget, QGroupBox, QToolButton, QMenu, QSizePolicy)
 
 from core.paths import CACHE, CONFIG, ROOT
 from core.pipeline import JobControl
 from core.types import CancelledError, Options
+from providers.agy import MODE as AGY_MODE, WHOLE_MODE
 from sources.cache import atomic_json
 from sources.collection import discover_local
 from sources.contracts import AccessStatus, SourceError, StructureChanged, WebsiteAdapter
@@ -78,6 +80,17 @@ class ComicSourceWorker(QThread):
                     images = self.request['adapter'].get_chapter_images(chapter, self.control)
                     self.event.emit({'type': 'images_ready', 'chapter_id': active_chapter, 'images': images,
                                      'warnings': getattr(images, 'warnings', ()), 'complete': getattr(images, 'complete', None)})
+            elif self.action == 'fresh_agy':
+                from sources.whole_input import prepare_input
+                from sources.cache import ChapterCache
+                from core.runtime import prepare_inference_runtime
+                context = self.request['context']; workspace = self.request['workspace']
+                collection = prepare_input(context, workspace, self.control, self.event.emit)
+                prepare_inference_runtime()
+                LocalComicJob(context['comic'], [context['chapter']], workspace/'published', context['options'],
+                    cache=ChapterCache(CACHE/'online_comics/_fresh'/workspace.name), database=self.request['database'],
+                    adapter=context.get('adapter'), fresh_inputs={context['chapter'].chapter_id: collection},
+                    control=self.control, emit=self.event.emit).run()
             elif self.action == 'process':
                 from core.runtime import prepare_inference_runtime
                 self.control.checkpoint()
@@ -96,7 +109,7 @@ class ComicSourceWorker(QThread):
             else:
                 raise SourceError('Tác vụ nguồn ảnh không được hỗ trợ.')
         except CancelledError:
-            if self.action in ('process', 'restore'):
+            if self.action in ('process', 'restore', 'fresh_agy'):
                 self.event.emit({'type': 'job_finished', 'state': 'cancelled', 'chapters_completed': 0,
                                  'chapters_failed': 0, 'images_exported': 0, 'images_failed': 0,
                                  'errors': [], 'outputs': []})
@@ -106,7 +119,7 @@ class ComicSourceWorker(QThread):
             logging.getLogger(__name__).exception('Comic source action failed: %s', self.action)
             self.event.emit({'type': 'source_error', 'category': getattr(exc, 'category', 'source'),
                              'phase': phase, 'chapter_id': active_chapter, 'detail': str(exc) or type(exc).__name__})
-            if self.action in ('process', 'restore'):
+            if self.action in ('process', 'restore', 'fresh_agy'):
                 self.event.emit({'type': 'job_finished', 'state': 'error', 'chapters_completed': 0,
                                  'chapters_failed': 0, 'images_exported': 0, 'images_failed': 0,
                                  'errors': [{'chapter_id': None, 'detail': str(exc)}], 'outputs': []})
@@ -116,6 +129,7 @@ class ComicSourcesPanel(QWidget):
     busyChanged = Signal(bool)
     importRequested = Signal()
     settingsRequested = Signal()
+    wholeRequested = Signal(dict)
 
     def __init__(self, options: Options, parent=None, settings_path: Path | None = None,
                  database: Path | None = None, fixed_kind: int | None = None, options_factory=None):
@@ -123,6 +137,10 @@ class ComicSourcesPanel(QWidget):
         self.setWindowTitle('Nguồn ảnh và truyện URL')
         self.resize(1040, 720)
         self.options = Options.from_dict(options.to_dict())
+        self.translation_mode = self.options.mode
+        self.whole_output = None
+        self.fresh_source_active = False
+        self.fresh_output = None
         self.settings_path = settings_path or CONFIG / 'online_comics.json'
         self.database = database
         self.options_factory = options_factory
@@ -309,8 +327,12 @@ class ComicSourcesPanel(QWidget):
             action.triggered.connect(button.click)
             self.extra_actions.append((action, button))
         menu.aboutToShow.connect(lambda: [a.setEnabled(b.isEnabled() and
-            (b != self.restore_cached or bool(self.restorable))) for a, b in self.extra_actions])
+            (b != self.restore_cached or bool(self.restorable or self.source_resume_id))) for a, b in self.extra_actions])
         self.more.setMenu(menu)
+        self.fresh_action = menu.addAction('Dịch lại toàn bộ chương (AGY)…')
+        self.fresh_action.triggered.connect(self.fresh_chapter)
+        menu.aboutToShow.connect(lambda: self.fresh_action.setEnabled(not self.busy and len(self.selected())==1
+            and self.translation_mode in (AGY_MODE, WHOLE_MODE)))
         controls.addWidget(self.more, 0, 5)
         layout.addLayout(controls)
         # URL/title/selection → table → compact notice → translate/progress.
@@ -488,11 +510,18 @@ class ComicSourcesPanel(QWidget):
         selected = self.selected()
         online = self.kind.currentIndex() == 2
         self.start.setEnabled(not self.busy and not online and bool(selected))
+        whole = self.translation_mode == WHOLE_MODE
+        if whole:
+            self.start.setEnabled(not self.busy and not online and len(selected)==1)
+        self.start.setText('Chuẩn bị toàn chương' if whole else 'Dịch ảnh đã có')
+        self.download.setText('Chuẩn bị toàn chương' if whole else 'Tải và dịch')
         decisions = [self.download_decisions.get(c.chapter_id) for c in selected]
         capability = self.adapter and type(self.adapter).download_chapter is not WebsiteAdapter.download_chapter
         ready = (online and self.chapter_state == AnalysisState.CHAPTER_LIST_READY and bool(selected)
                  and capability and all(d and d.allowed for d in decisions))
         self.download.setEnabled(not self.busy and bool(ready))
+        if whole:
+            self.download.setEnabled(not self.busy and online and self.chapter_state==AnalysisState.CHAPTER_LIST_READY and len(selected)==1)
         if not self.busy and self.processing_state in (ProcessingState.IDLE, ProcessingState.READY):
             self.processing_state = ProcessingState.READY if ready or (not online and selected) else ProcessingState.IDLE
         reason = ('Phân tích link để lấy danh sách chương.' if not self.chapters else
@@ -505,6 +534,9 @@ class ComicSourcesPanel(QWidget):
         self.download_status.setText(reason)
         self.download_status.setToolTip(reason)
         self.download.setToolTip(reason)
+        if whole:
+            self.start.setToolTip('Chọn đúng một chương/ảnh. Chuẩn bị không gửi AGY; xác nhận riêng sau khi đọc chữ.')
+            self.download.setToolTip('Chọn đúng một chương. Dùng ảnh cache hợp lệ; nếu thiếu phải qua điều kiện tải. Chưa gửi AGY.')
         self.retry_analysis.setEnabled(not self.busy and bool(self.comic))
         self.analyze_images.setEnabled(not self.busy and online and 1 <= len(selected) <= 10 and self.adapter is not None)
         self.analyze_images.setToolTip('Đợi tác vụ hiện tại kết thúc.' if self.busy else
@@ -564,18 +596,33 @@ class ComicSourcesPanel(QWidget):
             self.resume.setEnabled(bool(self.source_resume_id and self.paused_chapter))
 
     def begin(self, chapters=None, retry_only=False):
+        if retry_only and self.fresh_source_active:
+            self.restore_cached_job()
+            return
         chapters = chapters or self.selected()
         if not chapters or not self.comic or self.busy:
+            return
+        if self.options_factory:
+            self.options = self.options_factory()
+        if self.options.mode == WHOLE_MODE:
+            if retry_only:
+                self.status.setText('Retry trang lỗi thuộc công việc Batch. Chọn Batch để tiếp phần lỗi; Toàn chương dùng nút Chuẩn bị và kết quả riêng.')
+                return
+            if len(chapters)!=1:
+                self.status.setText('Toàn chương: chọn một chương mỗi lượt; giữ nguyên lựa chọn, không gộp nhiều chương.')
+                return
+            self.wholeRequested.emit(dict(kind='chapter', comic=self.comic, chapter=chapters[0],
+                adapter=self.adapter if self.comic.site_id!='local' else None, options=self.options))
             return
         online = self.kind.currentIndex() == 2
         self.refresh_start()
         if online and not retry_only and not self.download.isEnabled():
             self.status.setText(self.download_status.text())
             return
-        if self.options_factory:
-            self.options = self.options_factory()
         if not self.check_provider_setup():
             return
+        self.fresh_source_active = False
+        self.fresh_output = None
         self.provider_paused = False
         self.ui_job_state = 'RUNNING'
         self.paused_chapter = None
@@ -601,6 +648,41 @@ class ComicSourcesPanel(QWidget):
     def retry_failed(self):
         self.begin([chapter for chapter in self.chapters if chapter.chapter_id in self.failed_ids], retry_only=True)
 
+    def fresh_chapter(self):
+        chapters = self.selected()
+        if self.busy or not self.comic or len(chapters)!=1: return
+        options = self.options_factory() if self.options_factory else self.options
+        if options.mode not in (AGY_MODE, WHOLE_MODE): return
+        box = QMessageBox(self); box.setWindowTitle('Dịch lại toàn bộ chương')
+        box.setText('Tạo lượt xử lý mới cho toàn bộ chương đã chọn; không tiếp job cũ và không dùng bản dịch AGY cũ. '
+                    'Kết quả/cache/journal cũ được giữ nguyên. Có thể tiêu thụ quota. '
+                    'Toàn chương còn cần xác nhận riêng sau khi đọc chữ; Batch bắt đầu khi xác nhận tại đây.')
+        cancel=box.addButton('Hủy', QMessageBox.RejectRole)
+        accept=box.addButton('Tạo lượt dịch mới', QMessageBox.AcceptRole)
+        box.setDefaultButton(cancel); box.setEscapeButton(cancel); box.exec()
+        if box.clickedButton()!=accept: return
+        context=dict(kind='chapter',comic=self.comic,chapter=chapters[0],options=options,
+                     adapter=self.adapter if self.comic.site_id!='local' else None)
+        if options.mode==WHOLE_MODE:
+            self.wholeRequested.emit(dict(context,force_new=True)); return
+        workspace=ROOT/'output'/('stage3j-batch-'+uuid4().hex)
+        try:
+            workspace.parent.mkdir(parents=True,exist_ok=True)
+            workspace.mkdir(exist_ok=False)
+        except OSError:
+            self.status.setText('Không tạo được thư mục lượt mới độc lập; chưa xử lý hoặc gửi AGY.')
+            return
+        self.options = options
+        self.fresh_source_active = True
+        self.fresh_output = workspace/'published'
+        self.provider_paused=False; self.paused_chapter=None; self.source_resume_id=None
+        self.restorable = None
+        self.provider_notice.hide(); self.ui_job_state='RUNNING'
+        self.failed_ids = {chapters[0].chapter_id}; self.last_result = None
+        self.review_pages = []; self.review_button.setEnabled(False); self.progress.setValue(0)
+        self.processing_state = ProcessingState.TRANSLATING
+        self.launch('fresh_agy',dict(context=context,workspace=workspace,database=self.database))
+
     def update_comic_label(self):
         if not self.comic:
             return
@@ -615,6 +697,9 @@ class ComicSourcesPanel(QWidget):
 
     def handle_event(self, event):
         kind = event.get('type')
+        if kind == 'whole_input_progress':
+            self.status.setText(f"Chuẩn bị lượt mới • {event['stage']} • {event.get('index',0)}/{event.get('total',0)}")
+            return
         if kind == 'source_resume_ready':
             self.source_resume_id = event['resume_id']
             return
@@ -726,6 +811,10 @@ class ComicSourcesPanel(QWidget):
             self.paused_chapter = chapter_id
             self.provider_notice.show_error(event)
             self.status.setText('Đang tạm dừng; xem thông báo và Chi tiết. Kết quả đã hoàn tất được giữ.')
+        elif kind == 'pipeline' and event.get('pipeline_event_type') == 'agy_batch_wait':
+            self.status.setText(f"Đang chờ trước batch tiếp theo • còn {event['remaining_seconds']} giây")
+            if row is not None:
+                self.table.item(row, 5).setText('Đang chờ batch AGY tiếp theo')
         elif kind == 'pipeline' and event.get('pipeline_event_type') == 'gemini_api_usage':
             from ui.provider_notice import gemini_usage_text
             self.policy.setText(gemini_usage_text(event))
@@ -809,6 +898,9 @@ class ComicSourcesPanel(QWidget):
     def restore_cached_job(self):
         if self.busy:
             return
+        if self.translation_mode == WHOLE_MODE:
+            self.begin()
+            return
         record = self.resume_store.read(self.source_resume_id) if self.source_resume_id else self.restorable
         if not record:
             self.status.setText('Không có journal nguồn để khôi phục.')
@@ -817,6 +909,8 @@ class ComicSourcesPanel(QWidget):
             return
         self.options = self.options_factory() if self.options_factory else self.options
         self.output.setText(record['output'])
+        self.fresh_source_active = Path(record['cache_root']).resolve().is_relative_to((CACHE/'online_comics/_fresh').resolve())
+        self.fresh_output = Path(record['output']) if self.fresh_source_active else None
         self.processing_state = ProcessingState.TRANSLATING
         self.provider_paused = False
         self.status.setText('Đang xác minh cache/output; chương chưa tải sẽ được kiểm tra truy cập và policy trước khi tải...')
@@ -824,7 +918,13 @@ class ComicSourcesPanel(QWidget):
                                    options=self.options))
 
     def resume_job(self):
+        if self.translation_mode == WHOLE_MODE and not self.busy:
+            self.begin()
+            return
         if self.provider_paused and not self.busy:
+            if self.fresh_source_active:
+                self.restore_cached_job()
+                return
             chapters = [c for c in self.chapters if c.chapter_id == self.paused_chapter]
             self.begin(chapters, retry_only=True)
             return
@@ -842,7 +942,9 @@ class ComicSourcesPanel(QWidget):
             self.status.setText('Đang hủy an toàn; giữ kết quả, manifest và file dở để tiếp tục.')
 
     def show_output(self):
-        path = Path(self.output.text())
+        path = (self.whole_output if self.translation_mode == WHOLE_MODE and self.whole_output
+                else self.fresh_output if self.fresh_source_active and self.fresh_output
+                else Path(self.output.text()))
         if path.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:

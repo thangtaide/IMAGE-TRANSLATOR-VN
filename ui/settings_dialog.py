@@ -32,6 +32,10 @@ class SettingsDialog(QDialog):
         font_row.addWidget(browse)
         form.addRow('Font (trống = tự chọn)', font_row)
         self.fields = {}
+        batch_note = QLabel('AGY batch: tối đa 24 trang / 60 vùng / 3.000 ký tự nguồn; chờ 5–10 giây giữa lần dịch. '
+                           'Gemini API giữ planner 16 trang và giới hạn riêng. Whole Chapter AGY gửi một lần, không dùng các ngưỡng batch.')
+        batch_note.setWordWrap(True)
+        form.addRow(batch_note)
         for title, name, low, high in [('Cỡ chữ tối thiểu', 'font_min', 4, 80), ('Cỡ chữ tối đa', 'font_max', 8, 200),
                 ('Khoảng cách dòng', 'line_spacing', 0, 20), ('Viền chữ', 'stroke', 0, 5),
                 ('Nới mask (px)', 'mask_expand', 0, 8), ('Chất lượng JPEG/WEBP', 'quality', 10, 100),
@@ -43,6 +47,7 @@ class SettingsDialog(QDialog):
             widget.setValue(getattr(options, name))
             form.addRow(title, widget)
             self.fields[name] = widget
+        self.fields['agy_batch_chars'].setToolTip('AGY có trần cứng 3.000 ký tự nguồn dù đặt mục tiêu cao hơn. Gemini API giữ phạm vi cấu hình cũ.')
         self.confidence = QDoubleSpinBox()
         self.confidence.setRange(.1, .99)
         self.confidence.setSingleStep(.05)

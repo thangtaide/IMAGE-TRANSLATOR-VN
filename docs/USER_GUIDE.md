@@ -1,5 +1,116 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Stage3J — chủ động dịch lại từ đầu (chưa kiểm thử)
+
+1. Mở source bằng `run_source.bat` (Codex không chạy). Chọn AGY Batch hoặc
+   AGY Toàn chương, chọn đúng một chương theo luồng nguồn hiện có.
+2. Trong **Thêm → Dịch lại toàn bộ chương (AGY)…**, đọc xác nhận: lượt mới,
+   không tiếp job cũ, không dùng bản dịch AGY cũ, giữ kết quả cũ và có thể tốn
+   quota. Hủy thì không chuẩn bị/dịch. Không tự chuyển provider.
+3. Batch sau xác nhận kiểm tra/dùng ảnh cache hợp lệ, chuẩn bị cache/staging/
+   output mới. Khi thiếu ảnh vẫn phải qua download/access gate; không vượt hạn
+   chế nguồn. Guard AGY không an toàn thì pause một lần, không tạo Origin hàng
+   loạt. Không tự retry. OCR hợp lệ có thể reuse theo hash; MT cũ không reuse.
+4. Whole mở cửa sổ với nguồn đã chọn, tạo workspace mới rồi OCR. Sau thống kê,
+   **Xác nhận dịch bằng AGY…** là consent gửi riêng bắt buộc. Một invocation,
+   không chia batch/retry/fallback. Trong cửa sổ Whole, nút **Dịch lại toàn bộ
+   chương (lượt mới)…** cũng tạo lượt riêng sau xác nhận; không cần nút trùng.
+5. Xem lỗi/mã/attempt trong banner hoặc trạng thái Whole. Dữ liệu pending giữ
+   lại; nút đóng banner không resume. **Mở kết quả** trỏ kết quả lượt mới.
+   Batch mới resume qua journal/cache riêng của nó bằng luồng Tiếp tục hiện có;
+   không chọn lại journal timeout59done hoặc109Origin. Chỉ xử lý khi tự bấm.
+
+Không cần khôi phục hai job lịch sử của276880 để dùng thao tác này. Các file
+và receipt cũ giữ nguyên. Lượt Batch mới ở output/stage3j-batch-…/published;
+Whole vẫn ở output/stage3g-…/rendered. Không gọi lượt cache-only là dịch mới:
+Batch có ID/context mới và Whole có DB/receipt riêng, nên không dùng MT AGY cũ.
+
+Log lỗi được lưu tự động, không checkbox, không dashboard. Raw stdout/stderr
+nếu nhận được chỉ lưu **mã hóa Windows DPAPI**, không plaintext hoặc tự mở.
+Chỉ lỗi mới có bundle trong logs/diagnostics/agy_errors/<attempt_id>/; success
+không tạo thêm bundle. metadata.json/outcome.json không chứa OCR/prompt hoặc
+key; artifact *.raw.dpapi có thể chứa nội dung nhạy cảm khi giải mã. Không
+commit/upload/gửi file đó. Khi cần điều tra, chủ động yêu cầu Codex đọc metadata
+trước; việc đọc/giải mã raw cần yêu cầu riêng. Không gọi lại AGY chỉ để lấy log.
+
+Stage3J chỉ được kiểm tra tĩnh, **chưa chạy test/GUI/AGY hoặc DPAPI/DACL thật**.
+Hooks/MCP chưa an toàn vẫn bị chặn; Stage này không tự sửa cấu hình đó.
+
+## Stage3I — đọc lỗi AGY và ảnh Origin
+
+`AGY_AUTOMATIC_EXTENSIONS` là chặn cấu hình hooks/MCP cục bộ, không phải bằng
+chứng quota/model/numeric lỗi. Không tắt guard để tiếp tục. Kiểm tra file cấu
+hình cấp người dùng theo [Troubleshooting](TROUBLESHOOTING.md), không gửi file
+thô/command/credential ra ngoài. Nếu chưa xác minh được an toàn, giữ blocked.
+
+Whole có thể đã chốt ngân sách một lần dù guard chặn trước CLI. Không sửa
+`agy_attempt_used`; mở lại/tiếp tục không cho phép gọi lại workspace đó. Chỉ
+sau xử lý cấu hình hợp lệ, người dùng mới cân nhắc lượt mới với xác nhận mới.
+
+109/109 output,0dịch hoàn chỉnh,109Origin là đủ ảnh gốc dự phòng, **không phải
+dịch thành công**. Với chapter276880, đây là lượt mới độc lập;59output cũ và
+44cache receipts còn nguyên nhưng manifest hiện đang chỉ sang lượt mới.
+Đừng resume để nhập nhầm hai lượt hoặc sửa journal bằng tay. Xem
+[báo cáo Stage3I](STAGE3I_AGY_BLOCK_AND_ORIGIN_FORENSIC.md) trước khi yêu cầu
+phục hồi riêng. Codex không chạy lại chương, sửa config hoặc kiểm thử ở lượt này.
+
+## Stage3H — Toàn chương từ nguồn đang chọn (chưa kiểm thử)
+
+1. Chạy `run_source.bat` để mở source mới; EXE cũ không có thay đổi này.
+2. Trong ô **Dịch**, chọn **AI Gemini AGY — Toàn chương (1 lần)**. Offline
+   vẫn là mặc định của ứng dụng; chọn Whole không chạy dịch.
+3. Link truyện: phân tích link, chọn đúng **một chương** trong bảng, phân tích
+   chương nếu cần xác minh điều kiện tải, rồi bấm **Chuẩn bị toàn chương**.
+   Ảnh đơn/thư mục: dùng nguồn đã chọn rồi bấm cùng nút đó. Không phải chọn
+   lại provider hoặc duyệt lại thư mục trong cửa sổ mới.
+4. Ứng dụng kiểm tra ảnh cache và đọc chữ trong worker. Nếu chưa có cache,
+   thao tác chuẩn bị có thể tải ảnh khi adapter/access/download gate cho phép.
+   Cache đang dở hoặc hash sai thì dừng để xem lại, không tự tải bù vào cache cũ.
+5. Khi hiện đủ số trang, vùng và ký tự, bấm **Xác nhận dịch bằng AGY…**.
+   Đọc hộp xác nhận; **Hủy** không gửi AGY, **Xác nhận dịch bằng AGY** mới
+   cho phép một invocation. Không chia batch, retry hoặc tự fallback.
+6. **Hủy** khi đang xử lý yêu cầu dừng tại checkpoint an toàn. **Tiếp tục**
+   chỉ kiểm tra/đọc chữ/render dữ liệu đã lưu; nếu chưa có bản dịch thì cần
+   nút xác nhận riêng. Lượt đã chốt ngân sách AGY không tự gửi lại.
+7. **Mở thư mục kết quả** trong cửa sổ Whole, hoặc **Mở kết quả** ở nguồn
+   ban đầu sau khi đóng cửa sổ. Kết quả ở `output/stage3g-…/rendered`, tách
+   khỏi thư mục output và tổng kết Batch cũ. Không đổi journal Batch thành Whole.
+8. Sau khi mở lại ứng dụng, chọn lại đúng nguồn và Whole, bấm Chuẩn bị. Nếu
+   tìm được lượt Whole đã lưu, cửa sổ chỉ nạp thông tin; bấm Tiếp tục để xử lý.
+   Nếu muốn một lượt độc lập khác, dùng **Chuẩn bị lượt mới / Đọc chữ** rồi
+   xác nhận riêng; lượt đó có thể tiêu thụ quota mới.
+
+Mỗi lượt chỉ gắn một chương, không gộp nhiều chương đang chọn. Chuyển sang
+Whole khi Batch đang pending sẽ chuẩn bị **toàn bộ chương trong output riêng**,
+không chỉ dịch tiếp phần pending. Giữ Batch nếu muốn tiếp phần pending theo
+receipt Batch. Menu nâng cao: **Công cụ → Whole Chapter Translation (nâng cao)…**
+vẫn có Argos/AGY và nguồn thủ công. Chưa có nghiệm thu GUI/runtime cho Stage3H.
+
+## Stage3G — người dùng tự nghiệm thu AGY
+
+Chức năng mới **chưa chạy test**. Mở `run_source.bat` → menu Whole Chapter
+Translation → chọn Argos Offline hoặc AGY CLI. AGY: chọn ảnh local, bấm
+OCR/tạo manifest mới, xem số trang/vùng/ký tự, rồi bấm Xác nhận dịch bằng AGY…
+và xác nhận trong hộp thoại. Có thể tiêu thụ quota. Hủy hộp thoại không gửi.
+Chỉ một invocation dịch toàn chương; không chia theo24/60/3.000 và không
+chờ5–10giây. Không tự gọi CLI khi OCR xong, mở journal hoặc bấm Tiếp tục.
+
+Nếu đã có response/accepted hợp lệ, Tiếp tục chỉ validation/render phần còn
+thiếu. Nếu ngân sách AGY đã chốt nhưng thiếu response, workspace bị chặn,
+không gửi lại; giữ journal để xem lỗi trước khi chủ động tạo QA mới. Timeout
+không chứng minh chưa tiêu thụ quota. Không sửa cờ/hash để ép retry.
+
+Batch AGY ở ba tab chính độc lập: tối đa24trang có chữ/60vùng/3.000ký tự nguồn,
+flush ở ngưỡng đầu tiên; không phải lúc nào cũng24trang. Countdown5–10giây chỉ
+trước lần dịch AGY thật kế tiếp. Hủy trong lúc chờ không gửi tiếp; cache-only
+không chờ. Gemini API giữ16trang và không pacing; Argos không pacing.
+
+Whole workspace mới ở output/stage3g-…; không chuyển journal Argos Stage3F sang
+AGY bằng cách thay translator. Provider cửa sổ chính/default Offline không đổi.
+Chi tiết giới hạn stdin/argv/output, cách tự kiểm tra GUI và các điểm chưa xác
+minh: [báo cáo Stage3G](STAGE3G_AGY_WHOLE_CHAPTER_IMPLEMENTATION.md).
+Các mục Stage3F/3D bên dưới mô tả lịch sử trước bổ sung này.
+
 ## Whole Chapter Translation — thử nghiệm Stage3F
 
 1. Khi không có job đang chạy, mở **Whole Chapter Translation (thử nghiệm)…**
@@ -135,7 +246,8 @@ sang model khác. Chưa chạy QA API thật; không bảo đảm key/project hi
 được model chỉ từ kết quả mock.
 
 Batch dùng cấu hình chung **AGY / API** trong Cài đặt: mặc định3.000ký tự,
-60vùng, tối đa16trang có chữ; context tối đa8vùng/1.600ký tự JSON đã qua guard,
+60vùng; từ Stage3G AGY tối đa24trang có chữ, API giữ16. AGY có trần cứng3.000
+ký tự nguồn dù mục tiêu cấu hình cao hơn; context tối đa8vùng/1.600ký tự JSON đã qua guard,
 có thể tắt. Numeric/glossary guard giữ nguyên. Qua guard không chứng minh đúng
 nghĩa; cách viết ngày đổi thứ tự số vẫn có thể bị từ chối như trước.
 

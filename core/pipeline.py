@@ -56,6 +56,7 @@ class JobControl:
         self.condition = threading.Condition()
         self.paused = False
         self.cancelled = False
+        self.agy_batch_completed = False  # In-memory pacing across chapters in this worker/job only.
 
     def pause(self) -> None:
         with self.condition:
@@ -104,7 +105,8 @@ class TranslationService:
         if self.agy is None:
             self.agy = AGYProvider(executable=self.options.agy_executable, model=self.options.agy_model,
                 timeout=self.options.agy_timeout, max_requests=self.options.agy_max_requests,
-                checkpoint=self.control.checkpoint, cancelled=lambda: self.control.cancelled)
+                checkpoint=self.control.checkpoint, cancelled=lambda: self.control.cancelled,
+                error_context=getattr(self, 'agy_error_context', None))
         return self.agy
 
     def identity(self) -> str:
@@ -428,6 +430,7 @@ class ProcessingManager:
         errors = []
         pending_paths = []
         state = 'interrupted'
+        preflight_error = None
         try:
             self.validate()
             files = scan_images(self.source, self.options.recursive, self.output)
@@ -450,6 +453,9 @@ class ProcessingManager:
                 preflight_error, preflight_stage = exc, 'OCR'
                 ocr_identity = 'unavailable:' + type(exc).__name__
             try:
+                if self.options.mode == AGY_MODE:
+                    self.service.agy_error_context = dict(job_id=self.journal['id'], chapter_id=self.chapter_id,
+                                                         final_job_state='paused_provider')
                 service_identity = self.service.identity()
                 if self.prepared_chapter is not None:
                     service_identity = digest([service_identity, self.prepared_chapter.identity])
@@ -531,6 +537,9 @@ class ProcessingManager:
                     self.cache.checkpoint(self.job_id, str(path), 'working', fingerprint=fingerprint)
                     if preflight_error is not None:
                         stage = preflight_stage
+                        if self.options.mode == AGY_MODE and isinstance(preflight_error, ProviderSuspended):
+                            self.service.last_attempt = dict(provider='AGY Gemini', mode=AGY_MODE,
+                                model=getattr(getattr(preflight_error,'_agy_capture',None),'model','unknown'), model_identity=None)
                         raise preflight_error
                     stage = 'OCR'
                     self.event(path, 'OCR', 5, index+1, len(files))
@@ -609,9 +618,11 @@ class ProcessingManager:
                         exception_type=type(exc).__name__, checkpoint_state='paused_provider',
                         fallback_action='NONE', **self.service.last_attempt)
                     if self.options.mode == AGY_MODE:
+                        from core.agy_error_evidence import error_reference
+                        record.update(error_reference(exc))
                         from providers.agy_diagnostics import transport
                         record['agy_protocol'] = getattr(exc, 'agy_diagnostic', None) or transport(exc.code)
-                    if getattr(exc, 'phase', None) == 'provider_preflight':
+                    if getattr(exc, 'phase', None) in ('provider_preflight','agy_preflight'):
                         record.update(preflight_phase=exc.phase, request_sent=False, request_scope='current_batch')
                         for key in ('ocr_source_text', 'raw_translated_target', 'source_numeric_tokens', 'target_numeric_tokens'):
                             record.pop(key, None)
@@ -624,6 +635,10 @@ class ProcessingManager:
                         phase=getattr(exc, 'phase', None), request_sent=getattr(exc, 'request_sent', None),
                         request_scope=getattr(exc, 'request_scope', None),
                         image_index=image_indices[str(path)], provider=self.service.last_attempt.get('provider'),
+                        model=getattr(getattr(exc,'_agy_capture',None),'model','unknown') if self.options.mode == AGY_MODE else None,
+                        agy_timeout=self.options.agy_timeout if self.options.mode == AGY_MODE else None,
+                        agy_process_started=getattr(getattr(exc,'_agy_capture',None),'started',None) if self.options.mode == AGY_MODE else None,
+                        **(error_reference(exc) if self.options.mode == AGY_MODE else {}),
                         gemini_api_request=record.get('gemini_api_request'),
                         pending_paths=pending_paths))
                     state = 'paused_provider'
@@ -677,6 +692,8 @@ class ProcessingManager:
                         output_path=str(output) if output else None, checkpoint_state=checkpoint,
                         fallback_error=fallback_error)
                     if self.options.mode == AGY_MODE:
+                        from core.agy_error_evidence import error_reference
+                        record.update(error_reference(exc))
                         from providers.agy_diagnostics import transport
                         record['agy_protocol'] = getattr(exc, 'agy_diagnostic', None) or transport(code)
                     self.api_diagnostic(record, exc, checkpoint, len(files)-index)
@@ -686,6 +703,7 @@ class ProcessingManager:
                         'stage', 'error_code', 'exception_type', 'error_message', 'provider', 'mode',
                         'output_status', 'output_path', 'checkpoint_state', 'fallback_error')}
                     review.update(diagnostic_path=log_path, diagnostic_error=self.diagnostics.error)
+                    if self.options.mode == AGY_MODE: review.update(error_reference(exc))
                     self.review_pages.append(review)
                     self.cache.checkpoint(self.job_id, str(path), checkpoint, str(output) if output else '',
                                           fingerprint, json.dumps(review, ensure_ascii=False))
@@ -711,6 +729,11 @@ class ProcessingManager:
                 self.resume_store.save(self.journal)
             if self.job_id:
                 self.cache.job(self.job_id, self.options, state)
+            if self.options.mode == AGY_MODE:
+                finish = getattr(getattr(self.service,'agy',None),'finish_error_evidence',None)
+                if callable(finish): finish(state)
+                capture = getattr(preflight_error, '_agy_capture', None)
+                if capture: capture.finish(state)
             self.service.close()
             result = {'type': 'finished', 'state': state, 'errors': errors, **self.counts, 'total': len(files),
                       'translated_success': self.counts['completed'] + self.counts['skipped'],

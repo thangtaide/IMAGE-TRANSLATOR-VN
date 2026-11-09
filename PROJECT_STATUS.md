@@ -1,5 +1,138 @@
 # Trạng thái Image Translator VN
 
+## Điều tra AGY guard: 59/109 trang và attempt e0b09af0, 09/11/2026
+
+Chỉ đọc source/Git/metadata/config structure; không sửa source/config, chạy
+test/GUI/AGY/API hoặc resume. Guard có từ Stage3B commit1a47b15; AST predicate
+không đổi qua HEAD và working tree Stage3J. Attempt e0b09af0… ghi APP_PREFLIGHT,
+AUTOMATIC_EXTENSIONS, process_started=false, NOT_ATTEMPTED; outcome paused_provider.
+Journal hiện tại e95578e9… có109pending; journal cũ bc961120… vẫn59done/50pending/
+44region receipts, TIMEOUT ở lần gọi dịch thứ2. Không phải cùng giai đoạn lỗi.
+
+Tài liệu AGY hiện hành xác nhận hooks root là map tên hook, enabled mặc định
+true. Cấu hình hiện tại thiếu enabled nên không có bằng chứng disabled-only;
+thiếu wrapper hooks không phải sai schema. Guard chưa hiểu trạng thái tắt
+tường minh nhưng chưa chứng minh chặn nhầm file hiện tại. File hooks có thời
+điểm tạo/sửa06:53Z sau TIMEOUT05:01Z; thiếu snapshot lúc constructor cũ chạy
+nên chưa chứng minh đầy đủ lịch sử thay đổi hoặc người ghi. Docs không pin
+CLI1.5.3; cần xác minh effective configuration riêng trước hotfix schema.
+
+Xem [điều tra lịch sử guard và attempt e0b09af0](docs/AGY_GUARD_HISTORY_AND_ATTEMPT_E0B09AF0_FORENSIC.md).
+Giữ toàn bộ thay đổi Stage3G/H/I/J và dữ liệu cũ; không thực hiện phương án sửa
+được đề xuất. Không tuyên bố root cause backend TIMEOUT/quota đã xác định.
+
+## Stage3J — AGY preflight, dịch mới và error-only evidence, 09/11/2026
+
+**STAGE_3J_IMPLEMENTED_NOT_TESTED**. Không chạy test/GUI/OCR/MT/AGY/API/BAT/
+build. Chỉ triển khai, rà AST/diff và hash dữ liệu bảo vệ. Không sửa cấu hình
+hooks/MCP hoặc predicate guard, không retry/fallback/provider switch tự động.
+
+AGY factory chuyển lỗi khởi tạo đã xác định sang ProviderSuspended; pipeline
+dùng nhánh pause hiện có tại pending đầu tiên, không tạo hàng loạt Origin.
+Whole kiểm tra guard local sau consent, trước chốt ngân sách của lượt mới,
+rồi vẫn kiểm tra lại trong constructor. Không reset cờ workspace cũ.
+
+Menu Thêm của nguồn chương có **Dịch lại toàn bộ chương (AGY)…**, yêu cầu
+xác nhận và một chương được chọn. Batch dùng workspace/cache ảnh/staging riêng;
+job/page/context ID mới làm cache dịch AGY khác, OCR hợp lệ có thể reuse theo
+hash. DB chung chỉ thêm record lượt mới theo cơ chế cũ; không ghép journal,
+khôi phục59trang hoặc sửa pointer của job109Origin. Whole dùng nút tạo lượt
+mới có xác nhận, DB/output riêng và consent gửi AGY sau OCR như cũ.
+
+Thêm capture lỗi tự động: metadata an toàn và stdout/stderr thực nhận khi
+lỗi, lưu **mã hóa DPAPI CurrentUser** dưới logs/diagnostics/agy_errors/<attempt>/,
+DACL owner/SYSTEM. Không có raw plaintext/temp, không upload; không bảo vệ
+được thì metadata-only. Timeout giữ partial bytes với read1 và giới hạn cũ;
+không đổi90s/600s. Success không tạo error bundle; receipt vận hành giữ nguyên.
+Windows DACL/DPAPI và mọi hành vi GUI/runtime đều chưa được chạy nghiệm thu.
+Kiểm tra cuối:30.921file bảo vệ không đổi; settings.json thay đổi đồng thời,
+người dùng xác nhận đóng app đúng khung giờ, phù hợp closeEvent tự lưu. Giữ
+config mới, không hoàn nguyên; chi tiết trong báo cáo, không ghi toàn bộ hash
+giữ nguyên. Cache/DB/journal/output/model/EXE/hooks/MCP không đổi.
+
+Xem [báo cáo Stage3J](docs/STAGE3J_AGY_PREFLIGHT_AND_FRESH_RERUN.md), hướng dẫn
+người dùng và troubleshooting. Giữ nguyên lịch sử/tất cả thay đổi Stage3G/H/I
+chưa commit; không Stage3K, không commit/push/tag hoặc build EXE.
+
+## Stage3I — forensic AGY extension block / toàn Origin, 09/11/2026
+
+**STAGE_3I_FORENSIC_COMPLETE**. Chỉ điều tra local read-only và cập nhật tài
+liệu; không sửa source, cấu hình AGY, cache/journal/DB/output hoặc thử lại.
+Guard hiện tại chặn ở `%USERPROFILE%/.gemini/config/hooks.json`: JSON hợp lệ,
+1084byte, thiếu key hooks cấp đầu nên guard xét toàn object không rỗng. Cấu
+trúc chứa5trường command trong khai báo sự kiện, gồm Stop/PreToolUse/PostToolUse;
+không chứng minh các lệnh đã chạy. MCP file hiện rỗng, không phải lỗi parse/size.
+Giữ BLOCKED, không thêm key rỗng/đổi file để vượt guard.
+
+Whole workspace `stage3g-20261109T072406Z-9cf0024a`:109trang/93vùng/536ký tự,
+AGY_AUTOMATIC_EXTENSIONS, không subprocess dịch/response/render. Cờ
+agy_attempt_used=true đã chốt trước constructor theo Stage3G; không reset cờ.
+Batch toàn Origin là job **9646fde0…**, journal **bef9d2d9…**, không phải job
+timeout cũ **e8ddd939…** / journal **bc961120…**. 109 diagnostic cùng lỗi
+OnlineProviderError local được preflight lưu rồi nhánh fallback áp dụng cho
+từng ảnh, không phải109lần gọi AGY. 109output mới khớp byte/hash nguồn.
+
+Job cũ giữ59done/50pending,44region receipts và44target cache khớp hash;
+59pipeline/published output cũ còn nguyên. Manifest dùng chung hiện trỏ sang
+journal mới109fallback, nên không hướng dẫn resume mù để dùng lại59trang cũ.
+Không phải numeric/cache/recipe mismatch; recipe và options cũ/mới khớp.
+Tái dựng job ID khớp khi service identity đổi từ hợp lệ sang unavailable do
+constructor lỗi. Cần xử lý cấu hình ngoài app an toàn; thay đổi chính sách
+pause preflight thay fallback là đề xuất riêng, chưa triển khai/kiểm thử.
+
+Xem [báo cáo Stage3I](docs/STAGE3I_AGY_BLOCK_AND_ORIGIN_FORENSIC.md) để đọc
+bằng chứng, bảo toàn và hướng dẫn thủ công. Không chạy test/GUI/AGY/API/build,
+không commit. Giữ nguyên source Stage3G/3H chưa commit và các kết luận lịch sử.
+
+## Stage3H — Whole AGY từ provider chính và timeout forensic, 09/11/2026
+
+**STAGE_3H_IMPLEMENTED_NOT_TESTED**. Thêm lựa chọn **AI Gemini AGY — Toàn
+chương (1 lần)**, identity UI riêng; AGY cũ hiển thị **Batch** nhưng giữ identity.
+Từ chương online/ảnh đơn/thư mục đang chọn → Chuẩn bị toàn chương → đọc chữ
+trong worker → thống kê → xác nhận riêng trước một invocation AGY. Một chương
+mỗi lượt; không cần chọn lại provider/thư mục. Menu cũ chuyển vào Công cụ.
+
+Đọc cache chương đã stage đầy đủ và khớp hash, không sửa cache/journal Batch.
+Nếu chưa có cache, chỉ đường chạy GUI do người dùng bấm mới dùng adapter/gate
+cũ để tải vào cache nhánh mới. Cache không hoàn chỉnh/khác hash thì chặn.
+Output/SQLite/receipt Whole riêng trong `output/stage3g-*`; không nhập output
+Whole vào manifest hoặc tổng kết Batch. Mở lại cùng chương tìm lượt Whole đã
+lưu nhưng không tự xử lý/gửi AGY. Không đưa Whole vào Auto Fallback.
+
+Forensic read-only khớp diagnostic `05:01:21.057963Z`: chapter276880, Batch,
+model gemini-3.8-flash-medium, subprocess timeout90s, request_number2; batch ID
+tái dựng khớp, 24 trang có chữ (60–102), 39 vùng/226 ký tự. 109 nguồn, 59
+pipeline/published output và receipt khớp hash; 50 pending60–109, OCR tới103.
+Không có bằng chứng quota hoặc lý do sâu hơn; không tăng timeout hoặc resume.
+
+Không chạy test/GUI/AGY/API/build; chỉ AST/diff và đọc/hash dữ liệu. Git đang có
+thay đổi Stage3G chưa commit, giữ nguyên và tách delta Stage3H trong evidence.
+Xem [báo cáo Stage3H](docs/STAGE3H_MAIN_UI_AND_TIMEOUT_FORENSIC.md) để đọc phạm
+vi bảo toàn, giới hạn và hướng dẫn tự nghiệm thu. Các PASS bên dưới là lịch sử.
+
+## Stage3G — whole AGY một lần và batch24, 09/11/2026
+
+**STAGE_3G_IMPLEMENTED_NOT_TESTED** theo yêu cầu người dùng tự nghiệm thu.
+Whole dialog có Argos/AGY, OCR/manifest trước → thống kê → hộp xác nhận riêng
+gắn hash → tối đa1generation CLI/workspace. Không chia batch hoặc dùng chờ5–10s.
+Tái sử dụng command/runner/parser AGY; whole không --help/--version, không
+retry/fallback, không gọi AGY khi mở/chọn/OCR/nạp journal/resume. Response lưu
+riêng và guard/render Stage3F; budget đã chốt không reset khi mở lại.
+
+Batch AGY tối đa24trang/60vùng/3.000ký tự; chờ hủy được5–10giây trước lần dịch
+thật tiếp theo sau validation, kể cả cache hit xen giữa. Không chờ lần đầu/
+cuối/cache-only; không tăng concurrency. API giữ planner16, Argos không pacing.
+Không đổi numeric/glossary, BATCH_VERSION/provider cache keys hoặc schema
+ResumeStore; grouping mới đã vào context hash. Tương thích chưa chạy nghiệm thu.
+
+Chỉ AST/diff tĩnh; **không chạy test/GUI/AGY/API/BAT/build**, không request dịch
+mạng, không sửa dữ liệu/cache/DB/journal/output production hoặc artifact Stage3F.
+Whole stdin16MB/argv30kUTF16/output1MB là giới hạn an toàn, không khẳng định
+CLI/model chấp nhận mọi chương lớn. Timeout whole600s, cấu hình10–1800.
+Git baseline main/a0ea3bb sạch; không stage/commit/push. Xem
+[STAGE3G_AGY_WHOLE_CHAPTER_IMPLEMENTATION.md](docs/STAGE3G_AGY_WHOLE_CHAPTER_IMPLEMENTATION.md).
+497PASS/10SKIPPED bên dưới là lịch sử Stage3F, không phải test Stage3G.
+
 ## Stage3F — Whole Chapter Translation offline/mock, 09/11/2026
 
 **STAGE_3F_COMPLETED_WITH_WARNINGS**. Thêm coordinator và cửa sổ QA riêng qua

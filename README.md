@@ -1,5 +1,30 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3H — chọn Whole Chapter tại cửa sổ chính (chưa kiểm thử)
+
+Mở bản source bằng `run_source.bat`. Chọn **AI Gemini AGY — Toàn chương
+(1 lần)** trong ô Dịch, chọn một chương/ảnh hoặc thư mục theo luồng hiện có,
+rồi bấm **Chuẩn bị toàn chương**. Chương/ảnh được đưa sang cửa sổ chuẩn bị,
+không cần tìm lại thư mục hay chọn provider lần nữa. Xem số trang/vùng/ký tự
+rồi bấm **Xác nhận dịch bằng AGY…** nếu muốn gửi. Chọn provider/OCR/tiếp tục
+dữ liệu đã lưu không tự gửi AGY. Output Whole riêng, không ghi đè output Batch.
+Menu thủ công cũ nằm trong **Công cụ → Whole Chapter Translation (nâng cao)…**.
+
+**STAGE_3H_IMPLEMENTED_NOT_TESTED**: chỉ triển khai/kiểm tra tĩnh, không chạy
+GUI/test/dịch thật. Timeout trang60 đã khớp diagnostic Batch90s; chưa chứng minh
+nguyên nhân AGY chưa kết thúc, không kết luận quota. Xem [báo cáo Stage3H](docs/STAGE3H_MAIN_UI_AND_TIMEOUT_FORENSIC.md).
+
+## Stage3G — AGY Whole Chapter và batch24 (chưa kiểm thử)
+
+Trong menu Whole Chapter Translation, chọn **AGY CLI**, OCR/tạo manifest trước,
+sau đó kiểm tra số liệu và bấm **Xác nhận dịch bằng AGY…**. Whole gửi toàn chương
+một lần, không chia batch/chờ5–10giây; Argos vẫn có lựa chọn riêng. Batch AGY
+thông thường tối đa24trang/60vùng/3.000ký tự, chờ5–10giây giữa các lần dịch thật.
+Gemini API không đổi. Không tự retry/fallback hoặc gửi lại khi mở journal.
+**STAGE_3G_IMPLEMENTED_NOT_TESTED**: người dùng tự mở source để nghiệm thu;
+không có test/AGY/API thật hoặc EXE mới trong Stage này. Xem
+[báo cáo và hướng dẫn](docs/STAGE3G_AGY_WHOLE_CHAPTER_IMPLEMENTATION.md).
+
 ## Stage3F — Whole Chapter Translation thử nghiệm, chỉ offline
 
 Mở **Whole Chapter Translation (thử nghiệm)…** trên thanh menu của bản source.

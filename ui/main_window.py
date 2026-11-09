@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDia
 from core.paths import CONFIG, ROOT
 from core.storage import TranslationCache, load_options, save_options
 from core.types import Options
-from providers.agy import MODE as AGY_MODE
+from providers.agy import MODE as AGY_MODE, WHOLE_MODE
 from providers.gemini_api import MODE as GEMINI_API_MODE, key_available
 from ui.provider_notice import gemini_usage_text
 from core.provider_preflight import check_configuration
@@ -43,7 +43,10 @@ class MainWindow(QMainWindow):
         self.resize(min(1100, screen.width()-40), min(760, screen.height()-60))
         self.ui_job_state = 'IDLE'
         self.options = load_options()
-        self.menuBar().addAction('Whole Chapter Translation (thử nghiệm)…', self.show_whole_chapter)
+        tools_menu = self.menuBar().addMenu('Công cụ')
+        tools_menu.addAction('Whole Chapter Translation (nâng cao)…', self.show_whole_chapter)
+        self.whole_dialog = None
+        self.last_whole_output = None
         if not self.options.output:
             self.options.output = str(ROOT / 'output')
         self.worker: ProcessingWorker | None = None
@@ -123,8 +126,11 @@ class MainWindow(QMainWindow):
         self.mode_label = QLabel('Dịch')
         row.addWidget(self.mode_label)
         self.mode = QComboBox()
-        self.mode.addItems(['Offline', 'Online Free', AGY_MODE, GEMINI_API_MODE, 'Auto Fallback'])
-        self.mode.setCurrentText('Online Free' if self.options.mode == 'Online' else self.options.mode)
+        for label, value in [('Offline','Offline'), ('Online Free','Online Free'),
+                ('AI Gemini AGY — Batch', AGY_MODE), ('AI Gemini AGY — Toàn chương (1 lần)', WHOLE_MODE),
+                (GEMINI_API_MODE,GEMINI_API_MODE), ('Auto Fallback','Auto Fallback')]:
+            self.mode.addItem(label, value)
+        self.mode.setCurrentIndex(max(0,self.mode.findData('Online Free' if self.options.mode=='Online' else self.options.mode)))
         self.mode.setItemData(0, 'Offline — Argos Translate / model cục bộ', Qt.ToolTipRole)
         self.mode.setItemData(1, 'Online Free — MyMemory Machine Translation API', Qt.ToolTipRole)
         self.mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
@@ -264,6 +270,7 @@ class MainWindow(QMainWindow):
         self.url_panel.importRequested.connect(lambda: self.source_tabs.setCurrentIndex(1))
         for panel in (self.image_panel, self.url_panel):
             panel.settingsRequested.connect(self.show_api_settings)
+            panel.wholeRequested.connect(self.open_selected_whole)
         outer.addWidget(self.source_tabs, 1)
         self.set_running(False)
         self.setStyleSheet('''
@@ -298,7 +305,7 @@ class MainWindow(QMainWindow):
             field.setText(path)
 
     def update_mode(self, *_args) -> None:
-        mode = self.mode.currentText()
+        mode = self.mode.currentData()
         folder = True  # Translation selection is shared by all three input tabs.
         for widget in (self.online_provider, self.online_label, self.offline_provider, self.allow_fallback):
             widget.hide()
@@ -315,16 +322,30 @@ class MainWindow(QMainWindow):
         if mode == AGY_MODE:
             self.privacy.setText('AI Gemini — AGY: chỉ gửi các vùng OCR qua phiên AGY đã đăng nhập. '
                 'Model: ' + self.options.agy_model + '. Không dùng API key riêng hoặc tự dùng thêm credits; '
-                'file/shell/web/MCP bị chặn. Chỉ chạy khi bấm Bắt đầu; không tự đổi provider.')
+                'file/shell/web/MCP bị chặn. Batch tối đa 24 trang / 60 vùng / 3.000 ký tự nguồn; '
+                'chờ 5–10 giây giữa các lần dịch. Chỉ chạy khi bấm Bắt đầu; không tự đổi provider.')
 
         if mode == GEMINI_API_MODE:
             self.privacy.setText('Gemini API • ' + self.options.gemini_api_model +
                 (' • GEMINI_API_KEY: đã có (chưa kiểm tra mạng).' if key_available() else ' • Chưa có GEMINI_API_KEY.') +
                 ' Chỉ gửi OCR/context; không ảnh/tools. Kiểm tra project Free tier trong Cài đặt; không tự đổi provider.')
+        if mode == WHOLE_MODE:
+            self.privacy.setText('Toàn bộ chữ của chương/ảnh đã chọn → một invocation AGY sau xác nhận riêng. '
+                'Không phải batch 24 trang, không chờ 5–10 giây. Kết quả riêng; không tiếp công việc Batch hoặc tự fallback.')
         info = (self.options.gemini_api_model + (' • có key • ' if key_available() else ' • thiếu key • ') + check_configuration(self._mode_options()).code
-                if mode == GEMINI_API_MODE else self.options.agy_model if mode == AGY_MODE else
+                if mode == GEMINI_API_MODE else self.options.agy_model if mode in (AGY_MODE, WHOLE_MODE) else
                 self.online_provider.currentText() if mode in ('Online', 'Online Free') else self.offline_provider.currentText())
         self.provider_info.setText(info)
+        if mode == AGY_MODE:
+            self.provider_info.setText(info + ' • tối đa 24 trang / 60 vùng / 3.000 ký tự • chờ 5–10s')
+        if mode == WHOLE_MODE:
+            self.provider_info.setText(info + ' • toàn chương • 1 invocation sau xác nhận')
+        if hasattr(self, 'start_button'):
+            self.start_button.setText('Chuẩn bị toàn chương' if mode == WHOLE_MODE else 'Bắt đầu dịch')
+        for panel in (getattr(self,'image_panel',None),getattr(self,'url_panel',None)):
+            if panel is not None:
+                panel.translation_mode = mode
+                panel.refresh_start()
         self.provider_info.setToolTip(self.privacy.text())
         self.privacy.hide()
         if hasattr(self, 'provider_notice'):
@@ -339,7 +360,7 @@ class MainWindow(QMainWindow):
 
     def _mode_options(self):
         options = Options.from_dict(self.options.to_dict())
-        options.mode = self.mode.currentText()
+        options.mode = self.mode.currentData()
         return options
 
     def check_provider_setup(self, options):
@@ -354,7 +375,7 @@ class MainWindow(QMainWindow):
         self.options.source = self.source.text().strip()
         self.options.output = self.output.text().strip()
         self.options.language = self.language.currentData()
-        self.options.mode = self.mode.currentText()
+        self.options.mode = self.mode.currentData()
         self.options.online_provider = self.online_provider.currentText()
         self.options.offline_provider = self.offline_provider.currentText()
         self.options.allow_online_fallback = self.allow_fallback.isChecked()
@@ -367,6 +388,14 @@ class MainWindow(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
         options = self.collect_options()
+        if options.mode == WHOLE_MODE:
+            if only is not None:
+                QMessageBox.information(self, 'Retry thuộc công việc Batch',
+                    'Chọn lại phương thức Batch để retry các trang lỗi cũ. Toàn chương dùng nút Chuẩn bị toàn chương và kết quả riêng.')
+                return
+            self.open_selected_whole(dict(kind='folder', path=options.source, recursive=options.recursive,
+                                           options=options))
+            return
         if not self.check_provider_setup(options):
             return
         if not options.source or not options.output:
@@ -427,6 +456,9 @@ class MainWindow(QMainWindow):
         kind = event.get('type')
         if kind == 'resume_ready':
             self.resume_id = event['resume_id']
+            return
+        if kind == 'agy_batch_wait':
+            self.current.setText(f"Đang chờ trước batch tiếp theo • còn {event['remaining_seconds']} giây")
             return
         if kind in ('agy_batch', 'gemini_api_batch'):
             self.current.setText(f"{'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
@@ -529,6 +561,9 @@ class MainWindow(QMainWindow):
             self.ui_job_state = 'PAUSED_BY_USER'
 
     def resume(self) -> None:
+        if self.mode.currentData() == WHOLE_MODE:
+            self.start()
+            return
         if self.provider_paused and (not self.worker or not self.worker.isRunning()):
             self.start(list(self.provider_pending))
             return
@@ -570,7 +605,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, 'Chi tiết ảnh', self.details.get(path, self.table.item(row, 2).text()))
 
     def open_output(self) -> None:
-        path = Path(self.output.text())
+        path = (self.last_whole_output if self.mode.currentData() == WHOLE_MODE and self.last_whole_output
+                else Path(self.output.text()))
         if path.is_dir():
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
         else:
@@ -587,8 +623,33 @@ class MainWindow(QMainWindow):
         for panel in (self.image_panel, self.url_panel):
             if getattr(panel, 'worker', None) is not None and panel.worker.isRunning():
                 return
+        if self.whole_dialog and self.whole_dialog.isVisible():
+            self.whole_dialog.raise_(); return
         from ui.whole_chapter import WholeChapterDialog
         WholeChapterDialog(self.options, self).exec()
+
+    def open_selected_whole(self, context):
+        if self.worker and self.worker.isRunning(): return
+        if any(p.worker and p.worker.isRunning() for p in (self.image_panel,self.url_panel)): return
+        if self.whole_dialog and self.whole_dialog.isVisible():
+            self.whole_dialog.raise_(); return
+        if context['kind']=='folder' and (not str(context.get('path','')).strip() or not Path(context['path']).is_dir()):
+            QMessageBox.warning(self,'Chọn nguồn ảnh','Chọn thư mục ảnh chương trước khi chuẩn bị toàn chương.')
+            return
+        from ui.whole_chapter import WholeChapterDialog
+        options = context.get('options') or self.collect_options()
+        dialog = WholeChapterDialog(options, self, bound_context=context, translator_kind='agy')
+        self.whole_dialog = dialog
+        dialog.exec()  # Modal: normal batch controls cannot start alongside this job.
+        if dialog.workspace:
+            self.last_whole_output = dialog.workspace/'rendered'
+            if context['kind']=='chapter':
+                panel=self.image_panel if context['comic'].site_id=='local' else self.url_panel
+                panel.whole_output = self.last_whole_output
+                panel.status.setText('Kết quả toàn chương riêng: '+str(self.last_whole_output)+'. Kết quả Batch cũ được giữ nguyên.')
+            else:
+                self.current.setText('Kết quả toàn chương riêng: '+str(self.last_whole_output)+'. Kết quả Batch cũ được giữ nguyên.')
+        self.whole_dialog = None
 
     def show_models(self) -> None:
         ModelManagerDialog(self).exec()
@@ -624,7 +685,7 @@ class MainWindow(QMainWindow):
             self.source.setText(p.source)
             self.output.setText(p.output)
             self.language.setCurrentIndex(max(0, self.language.findData(p.language)))
-            self.mode.setCurrentText('Online Free' if p.mode == 'Online' else p.mode)
+            self.mode.setCurrentIndex(max(0,self.mode.findData('Online Free' if p.mode=='Online' else p.mode)))
             self.online_provider.setCurrentText(p.online_provider)
             self.offline_provider.setCurrentText(p.offline_provider)
             self.recursive.setChecked(p.recursive)

@@ -1,5 +1,34 @@
 # Website Adapter AI Guide — Image Translator VN
 
+## Stage3J — fresh AGY chapter (chưa kiểm thử)
+
+Thao tác người dùng Thêm → Dịch lại toàn bộ chương yêu cầu xác nhận, không
+phải IMAGE_LIST_READY tự tải. prepare_input dùng ảnh đã stage đầy đủ/khớp hash;
+nếu chưa có ảnh vẫn dùng download/access gate hiện có và cache incoming riêng.
+Fresh Batch stage vào cache/online_comics/_fresh/<run>/; publication ở output
+mới, staging có suffix fresh_<run>. Không cập nhật manifest cũ hoặc nhập59done/
+44receipts lịch sử. Source request mới lưu cache_root riêng để resume đúng.
+Không đổi Kuaikan parser, policy, CDN/HTTPS guard hoặc quyền UNKNOWN.
+AGY initialization suspension dừng chương hiện tại, không chuyển tiếp tự tải
+chương sau và không tạo hàng loạt Origin. Không chạy mạng/test trong Stage3J.
+
+## Stage3H — Whole từ chương đã chọn, chưa kiểm thử
+
+Main provider `AI Gemini AGY Whole Chapter` là routing UI riêng. Source panel
+emit `wholeRequested` với đúng một ChapterInfo thay vì LocalComicJob. Worker
+đọc ChapterCache đầy đủ/khớp hash theo danh sách trang; không sửa manifest,
+resume hoặc DB Batch. Nếu chưa có cache, `sources/whole_input.py` gọi downloader
+adapter hiện có sau download decision, vào nhánh `cache/whole_chapter_inputs/`
+riêng của lượt Whole. Không đổi adapter, HTTPS/CDN guard, policy hoặc danh sách
+chương. Cache dở/hash sai thì fail closed; không tự tải bù vào cache production.
+
+Phân tích link/chương và đổi provider không tải/dịch. Người dùng bấm Chuẩn bị
+mới tạo intent chuẩn bị ảnh; OCR xong vẫn cần xác nhận riêng mới gửi AGY.
+Content permission UNKNOWN không được đổi thành OFFICIAL_PERMISSION. Whole
+output/receipt riêng trong output/stage3g-*, không tự cập nhật tổng kết Batch.
+Không chuyển journal cũ; resume Whole dùng context và input receipt riêng.
+Không có kiểm thử hoặc request mạng ở Stage3H; xem báo cáo tương ứng.
+
 ## IMAGE_LIST_READY và lệnh tải chủ động — kiểm chứng 08/11/2026
 
 Discovery không tạo download intent: `ComicSourceWorker('images')` chỉ emit

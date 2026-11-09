@@ -12,7 +12,7 @@ from core.paths import CACHE, ROOT
 # Separate staging location from ROOT's safety checks; QA may redirect this constant.
 PIPELINE_STAGING_ROOT = ROOT / 'output' / 'online_comics_work'
 from core.pipeline import JobControl, ProcessingManager, TranslationService
-from providers.agy import MODE as AGY_MODE
+from providers.agy import MODE as AGY_MODE, WHOLE_MODE
 from providers.gemini_api import MODE as GEMINI_API_MODE
 from core.storage import TranslationCache, digest, file_digest
 from core.types import CancelledError, Options
@@ -76,11 +76,14 @@ class LocalComicJob:
     def __init__(self, comic: ComicInfo, chapters: list[ChapterInfo], output: Path, options: Options,
                  keep_cached: bool = True, control: JobControl | None = None, emit=lambda _: None,
                  cache: ChapterCache | None = None, database: Path | None = None,
-                 adapter: WebsiteAdapter | None = None, retry_only: bool = False, resume_source_id: str | None = None):
+                 adapter: WebsiteAdapter | None = None, retry_only: bool = False, resume_source_id: str | None = None,
+                 fresh_inputs: dict | None = None):
         self.comic, self.chapters, self.output = comic, chapters, output
         self.options = Options.from_dict(options.to_dict())
         # Legacy source jobs retain Offline enforcement. The explicitly selected
         # Stage3A mode is opt-in and shares the existing processing service.
+        if self.options.mode == WHOLE_MODE:
+            raise SourceError('Whole Chapter cần luồng chuẩn bị/xác nhận riêng; không chuyển ngầm sang Offline hoặc dùng journal batch.')
         if self.options.mode not in ('Online Free', AGY_MODE, GEMINI_API_MODE):
             self.options.mode = 'Offline'
         self.options.allow_online_fallback = False
@@ -92,6 +95,14 @@ class LocalComicJob:
         self.adapter = adapter
         self.retry_only = retry_only
         self.resume_source_id = resume_source_id
+        self.fresh_inputs = fresh_inputs
+        if fresh_inputs is not None:
+            fresh_root = CACHE/'online_comics/_fresh'
+            if (self.options.mode != AGY_MODE or not self.cache.root.is_relative_to(fresh_root.resolve())
+                    or self.cache.root == fresh_root.resolve() or retry_only or resume_source_id):
+                raise CacheError('Lượt AGY mới cần cache riêng, không nối journal cũ.')
+            if self.cache.root.exists():
+                raise CacheError('Cache lượt mới đã tồn tại; không dùng lại bản dịch hoặc ghi đè. Tạo lượt mới khác.')
 
     def run(self) -> dict:
         result = {'state': 'interrupted', 'chapters_completed': 0, 'chapters_failed': 0,
@@ -110,7 +121,7 @@ class LocalComicJob:
             if local:
                 if any(c.access_status != AccessStatus.LOCAL or not c.local_source for c in self.chapters):
                     raise AccessRestricted('Nguồn cục bộ cần đường dẫn ảnh do người dùng cung cấp.')
-            elif not self.retry_only and (self.adapter is None or self.adapter.site_id != self.comic.site_id
+            elif self.fresh_inputs is None and not self.retry_only and (self.adapter is None or self.adapter.site_id != self.comic.site_id
                   or type(self.adapter).download_chapter is WebsiteAdapter.download_chapter):
                 raise SourceError('Adapter chưa có downloader tương thích cho nguồn đã chọn.')
             elif self.comic.comic_id is None:
@@ -154,6 +165,11 @@ class LocalComicJob:
                                 raise CacheError('Output đã đổi/hỏng; giữ nguyên để kiểm tra, không ghi đè.')
                             paths.append(source)
                         cached = ImageCollection(current_directory, tuple(paths))
+                    elif self.fresh_inputs is not None:
+                        collection = self.fresh_inputs[chapter.chapter_id]
+                        if not isinstance(collection, ImageCollection) or not collection.paths:
+                            raise CacheError('Lượt mới chưa có ảnh nguồn đã xác minh.')
+                        decision = None  # No new grant: images were verified by the existing input gate.
                     elif local:
                         collection = ImageCollection.discover(chapter.local_source)
                     else:
@@ -208,6 +224,9 @@ class LocalComicJob:
                             self.comic, chapter, collection, self.control,
                             lambda event: self.emit(dict(event, type='cache', chapter_id=chapter.chapter_id)),
                             download_decision=decision if not local else None)
+                        if self.fresh_inputs is not None:
+                            manifest['provenance'] = 'verified_existing_images_fresh_agy_run'
+                            self.cache.save(current_directory, manifest)
                     source_record.setdefault('cached_chapters', {})[chapter.chapter_id] = len(cached.paths)
                     source_store.save(source_record)
                     # A separate receipt database must have a separate staging area.
@@ -215,6 +234,8 @@ class LocalComicJob:
                     namespace = digest(str(self.database.resolve()))[:20]
                     stage = (PIPELINE_STAGING_ROOT / namespace
                              / self.comic.comic_id / chapter.chapter_id)
+                    if self.cache.root.is_relative_to((CACHE/'online_comics/_fresh').resolve()):
+                        stage = stage/('fresh_'+self.cache.root.name)
                     data = self.options.to_dict()
                     data.update(output=str(stage), skip_success=True, preserve_structure=True)
                     options, only = cached.request(Options.from_dict(data))

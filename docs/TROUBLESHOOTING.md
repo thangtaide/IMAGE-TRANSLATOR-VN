@@ -1,5 +1,129 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3J — preflight pause và log chỉ khi lỗi (chưa kiểm thử)
+
+- `AGY_AUTOMATIC_EXTENSIONS`: factory dừng ở cấp provider; phần pending không
+  được xuất Origin hoặc đánh dấu done. GUI báo pause, chưa gửi OCR để dịch.
+  Guard và file hooks/MCP giữ nguyên; quota nhiều không thay điều kiện này.
+- Các lỗi AGY_NOT_FOUND/MODEL/CAPABILITY/INITIALIZATION cũng đi qua suspension
+  tại factory. Capability probe có thể đã chạy trước lỗi capability; chỉ mã
+  hooks/MCP mới chứng minh chặn trước mọi CLI. Xem process_started/role.
+- Whole mới kiểm tra guard sau xác nhận nhưng trước chốt budget, constructor
+  vẫn recheck. Workspace lịch sử đã agy_attempt_used=true không được reset.
+  Dùng thao tác **Dịch lại toàn bộ chương** để tạo lượt mới, không sửa journal.
+- TIMEOUT không phải quota: giữ deadline90s Batch/600s Whole. Metadata ghi
+  elapsed, exit code nếu quan sát được, nguồn CLI_TIMEOUT và backend UNKNOWN.
+  Partial stdout/stderr nhận được có thể lưu mã hóa, không coi là terminal hoàn chỉnh.
+- Parser/ID/tool-use hoặc numeric/glossary rejection vẫn bị chặn như cũ. Có
+  evidence lỗi để điều tra, không nới guard hoặc tự gửi lại.
+- Đường log: logs/diagnostics/agy_errors/<attempt_id>/. metadata.json và
+  outcome.json là metadata; stdout.raw.dpapi/stderr.raw.dpapi nếu có là raw
+  **mã hóa**, cần đúng ngữ cảnh Windows CurrentUser để giải mã. Không đổi đuôi
+  rồi coi như plaintext. Không có bytes thì không tạo file giả; response từ
+  stdout chỉ tham chiếu cùng artifact, không lưu bản trùng.
+- `AGY_RAW_EVIDENCE_INCOMPLETE`, `AGY_EVIDENCE_WRITE_FAILED` hoặc
+  `AGY_EVIDENCE_STORE_FULL`: lỗi gốc vẫn giữ. Raw có thể chưa lưu; kiểm tra
+  not_saved/partial/captured_bytes/observed_bytes. Kho tối đa64MB và giới hạn
+  số entry; không tự xóa log cũ. Quyền/DPAPI không xác minh được thì metadata-only.
+- Không gửi raw/config/command/token ra ngoài. Yêu cầu Codex điều tra theo
+  attempt ID/job ID trước; chỉ đọc raw khi người dùng chủ động cho phép.
+- Fresh Batch: dùng cache/staging/output riêng; nếu cache mới đã tồn tại thì
+  fail closed, không dùng lại MT. Resume lượt mới qua cache_root đã lưu, không
+  quay sang manifest276880 lịch sử. Fresh chỉ hỗ trợ một chương đã chọn/lượt.
+
+Các hành vi mới chưa được chạy; không có test PASS mới. Xem
+[báo cáo Stage3J](STAGE3J_AGY_PREFLIGHT_AND_FRESH_RERUN.md).
+
+## Stage3I — AGY_AUTOMATIC_EXTENSIONS / 109 ảnh Origin
+
+Đã điều tra thật từ dữ liệu lưu, không gọi AGY hoặc chạy test. Guard dùng
+`%USERPROFILE%\.gemini\config\hooks.json` và `mcp_config.json` cấp người dùng;
+không phải file source trong project hoặc settings riêng từng invocation.
+Tại lúc điều tra hooks.json có cấu trúc khai báo sự kiện với5trường command;
+JSON hợp lệ nhưng không có key hooks cấp đầu, guard xét object không rỗng và
+chặn. Không chứng minh lệnh đã thực thi; không đủ cơ sở coi là metadata vô hại.
+Không sửa guard hoặc tự đổi cấu hình này. MCP file hiện rỗng.
+
+1. Không sửa/xóa/đổi tên file để lách kiểm tra, không thêm `hooks: {}` bên
+   cạnh khai báo hook thực. Không mở quyền file/shell/MCP hoặc đổi model/key.
+2. Người dùng có thể sao lưu riêng hai file cấu hình rồi kiểm tra các hook
+   Stop/PreToolUse/PostToolUse và các sự kiện còn lại bằng cơ chế cấu hình
+   chính thức mà AGY hỗ trợ. Không gửi command/token/config thô vào báo cáo.
+3. Chỉ thử lại khi đã chủ động tắt các hook/MCP tự động thực sự và có thể xác
+   minh schema an toàn. Chưa kiểm chứng cách tắt hoặc profile cách ly của AGY
+   trong nhiệm vụ này. Nếu vẫn cần hooks cho công việc khác/không xác minh
+   được, giữ BLOCKED và dùng Offline do người dùng tự chọn; không bypass.
+4. Whole bị chặn đã có `agy_attempt_used=true` dù chưa tạo subprocess dịch.
+   Đây là ngân sách đã chốt, không phải bằng chứng quota đã tiêu thụ. Không
+   sửa journal/reset cờ. Sau khi cấu hình an toàn, nếu muốn thử AGY thì người
+   dùng chủ động chuẩn bị workspace mới và xác nhận mới; lượt cũ vẫn giữ.
+5. 109 ảnh Origin của chapter276880 là job mới: lỗi constructor local đi vào
+   fallback từng trang. Không có bản dịch/MT validation nào thành công trong
+   lượt đó, không phải109request. COMPLETED_WITH_WARNINGS chỉ đủ file dự phòng.
+6. 59 output và44target cache của job timeout cũ vẫn còn/khớp hash. Nhưng
+   manifest hiện trỏ journal mới109fallback. Không tự sửa pointer/hash hoặc
+   resume mù để "khôi phục"59trang. Cần phương án phục hồi riêng, kiểm tra
+   receipt và yêu cầu chủ động trước khi chạy production.
+
+Không sửa source hoặc cấu hình trong Stage3I. Nếu muốn đổi lỗi preflight AGY
+thành pause một lần thay vì xuất fallback mọi trang, đó là thay đổi hành vi
+cần hotfix/kiểm thử riêng, không phải tắt guard. Xem
+[forensic Stage3I](STAGE3I_AGY_BLOCK_AND_ORIGIN_FORENSIC.md).
+
+## Stage3H — Whole từ provider chính và TIMEOUT trang60
+
+- Không thấy lựa chọn Toàn chương: mở `run_source.bat`, kiểm tra dropdown Dịch;
+  EXE cũ chưa được build lại. Chọn **AI Gemini AGY — Batch** và **Toàn chương
+  (1 lần)** là hai đường riêng. Whole không nằm trong Auto Fallback.
+- Nút Chuẩn bị chưa bật: chọn đúng một chương; đợi tác vụ nguồn kết thúc.
+  Chỉ phân tích link/chương không tự tải ảnh hoặc dịch. Chuẩn bị dùng cache
+  hợp lệ, hoặc tải qua gate nếu chưa có cache; không có quyền thì báo lỗi nguồn.
+- `WHOLE_SOURCE_ACCESS_DENIED` / `WHOLE_SOURCE_DOWNLOAD_NOT_ALLOWED`: lỗi nguồn
+  truyện/điều kiện tải, không phải quota AGY. Không vượt login/VIP/paywall.
+- `WHOLE_SOURCE_CACHE_INCOMPLETE` / `WHOLE_SOURCE_CACHE_CHANGED`:
+  cache chưa xác minh đầy đủ hoặc hash không khớp; giữ dữ liệu để kiểm tra.
+  Không sửa manifest/hash hoặc xóa cache để ép tiếp tục.
+- `WHOLE_INPUT_CHANGED` / `WHOLE_INPUT_CONTEXT_CHANGED`: ảnh hoặc nguồn khác
+  lượt đã lưu; không dùng receipt nhầm chương. Kết quả cũ vẫn được giữ.
+- Mở lượt cũ không gọi AGY. Bấm Tiếp tục để kiểm tra; nếu cần bản dịch mới thì
+  phải xác nhận riêng. `WHOLE_AGY_ATTEMPT_ALREADY_USED` không được tự retry.
+- Kết quả Whole ở thư mục riêng; bảng/tổng kết Batch cũ không tự đổi thành done.
+  Không chạy lại toàn chương chỉ để sửa con số hiển thị của Batch.
+
+TIMEOUT `2026-11-09T05:01:21Z` thuộc **Batch** chapter276880: timeout subprocess
+90s, 24 trang có chữ trong khoảng60–102, 39 vùng/226 ký tự, generation ordinal2.
+59/109 output/receipt còn nguyên, pending60–109. Không có bằng chứng hết quota.
+Pacing5–10s diễn ra trước subprocess, không thuộc đồng hồ90s. Không tự tăng
+timeout hoặc gửi lại để xác minh. Raw terminal không được lưu nên chưa biết
+vì sao CLI chưa kết thúc. Xem [forensic Stage3H](STAGE3H_MAIN_UI_AND_TIMEOUT_FORENSIC.md).
+Stage3H chưa chạy test/GUI/AGY; người dùng tự nghiệm thu.
+
+## Stage3G — AGY Whole Chapter (chưa kiểm thử)
+
+- `WHOLE_AGY_CONFIRMATION_REQUIRED`: chưa có xác nhận gắn với manifest hiện
+  tại. Chuẩn bị lại manifest rồi dùng nút xác nhận riêng; không sửa journal.
+- `WHOLE_AGY_ATTEMPT_ALREADY_USED`: ngân sách workspace đã chốt, thiếu response
+  hợp lệ. Không biết chắc process đã gửi/tiêu quota hay chưa; không tự gọi lại.
+- `WHOLE_AGY_RESPONSE_CHANGED`, `WHOLE_AGY_BINARY_CHANGED`: hash response/binary
+  không khớp; giữ artifact, không bỏ kiểm tra hoặc sửa hash để ép chạy.
+- `WHOLE_AGY_NEW_WORKSPACE_REQUIRED`: AGY cần workspace Stage3G mới, không đổi
+  translator của journal Argos Stage3F để sử dụng lại kết quả khác provider.
+- `WHOLE_COMMAND_LIMIT`, `WHOLE_PAYLOAD_LIMIT`: argv/schema quá30kUTF16 hoặc
+  stdin vượt16MB local; không cắt OCR/chia batch tự động. Backend context limit
+  thực tế vẫn chưa xác minh. Output1MB/vùng4.000ký tự vẫn có thể bị chặn.
+- `AGY_START_FAILED`, `AUTH_REQUIRED`, `ACCESS_DENIED`, `MODEL_UNAVAILABLE`,
+  `CLI_EXIT_ERROR`, `EMPTY_RESPONSE`: xem mã cụ thể, không tự đổi model/key hoặc
+  coi mọi lỗi là quota. Không đăng nhập/thay config AGY tự động.
+- `INVALID_RESPONSE` có thể do JSON/ID/tool-use guard; không chứng minh tool
+  invocation thật hoặc hết quota. `NUMERIC_MISMATCH` vẫn bị từ chối như cũ.
+- `TIMEOUT`/Cancel: dữ liệu OCR/receipt được giữ; không biết quota có bị tiêu
+  thụ không. Nếu có response đã lưu, có thể validation/render local khi chủ
+  động Tiếp tục; thiếu response sau budget chốt thì không gửi lại.
+
+Batch AGY thường có dòng Đang chờ trước batch tiếp theo với countdown. Đây là
+pacing5–10giây, không phải retry/quota reset. Rate/quota/permission lỗi vẫn
+dừng. Các thay đổi Stage3G chỉ được đọc diff/AST, chưa có kết quả test mới.
+
 ## Stage3F — Whole Chapter Translation offline
 
 - `awaiting_translation`: OCR/manifest đã có; chưa được cho phép dịch phần còn

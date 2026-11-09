@@ -2,12 +2,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
+import random
+import time
 from core.storage import digest
 from core.types import CancelledError
 from providers.online import OnlineProviderError, ProviderSuspended
 from providers.gemini_api import MODE as GEMINI_API_MODE
 
 BATCH_VERSION = 'multipage-ids-context-v1'
+AGY_MAX_PAGES = 24
+AGY_MAX_CHARACTERS = 3000
+AGY_MAX_REGIONS = 60
+AGY_WAIT_SECONDS = (5, 10)
 
 
 @dataclass(frozen=True)
@@ -18,10 +25,12 @@ class Item:
     region: object
 
 
-def pack_pages(pages, chars=3000, regions=60):
+def pack_pages(pages, chars=3000, regions=60, *, max_pages=16, hard_chars=None):
     """Keep a fitting page whole; split oversized pages only at region boundaries."""
     if not 100 <= chars <= 12000 or not 1 <= regions <= 60:
         raise ValueError('AGY_BATCH_CONFIG: ký tự100–12000, vùng1–60')
+    if not 1 <= max_pages <= AGY_MAX_PAGES:
+        raise ValueError('AGY_BATCH_CONFIG: số trang không hợp lệ')
     batch, count, language, page_count = [], 0, None, 0
     for page in pages:
         if not page:
@@ -29,12 +38,14 @@ def pack_pages(pages, chars=3000, regions=60):
         size = sum(len(i.region.text) for i in page)
         languages = {i.region.language for i in page}
         if batch and (count + size > chars or len(batch) + len(page) > regions or
-                      languages != {language} or page_count >= 16):
+                      languages != {language} or page_count >= max_pages):
             yield batch
             batch, count, language, page_count = [], 0, None, 0
         page_count += 1
         for item in page:
             n = len(item.region.text)
+            if hard_chars is not None and n > hard_chars:
+                raise OnlineProviderError('INVALID_REQUEST', 'Một vùng OCR vượt giới hạn ký tự AGY batch; không cắt chữ hoặc gửi quá giới hạn.')
             if n > 6000:
                 raise OnlineProviderError('INVALID_REQUEST', 'Một vùng OCR vượt6000ký tự; không cắt mất chữ.')
             if batch and (len(batch) >= regions or count + n > chars or item.region.language != language):
@@ -53,9 +64,12 @@ class MultiPageAGY:
         self.files = files
         self.relevant, self.ocr_identity, self.service_identity = relevant, ocr_identity, service_identity
         self.expected, self.values, self.errors = {}, {}, {}
-        self.batches = iter(pack_pages(self.pages(), manager.options.agy_batch_chars,
-                                      manager.options.agy_batch_regions))
         self.is_api = manager.options.mode == GEMINI_API_MODE
+        self.max_pages = 16 if self.is_api else AGY_MAX_PAGES
+        self.batch_chars = manager.options.agy_batch_chars if self.is_api else min(manager.options.agy_batch_chars, AGY_MAX_CHARACTERS)
+        self.batches = iter(pack_pages(self.pages(), self.batch_chars,
+            manager.options.agy_batch_regions if self.is_api else min(manager.options.agy_batch_regions, AGY_MAX_REGIONS), max_pages=self.max_pages,
+            hard_chars=None if self.is_api else AGY_MAX_CHARACTERS))
         self.provider = self.service._gemini_api() if self.is_api else self.service._agy()
         if self.is_api:
             self.provider.emit = manager.emit
@@ -84,8 +98,9 @@ class MultiPageAGY:
                 items = [Item(f'j{m.job_id[:12]}_c{digest(m.chapter_id)[:8]}_p{page_index:06d}'
                               f'_h{source_hash[:12]}_r{n:04d}_o{region.reading_order:04d}', key, n, region)
                          for n, region in enumerate(regions)]
-                if any(len(i.region.text) > 6000 for i in items):
-                    raise OnlineProviderError('INVALID_REQUEST', 'Vùng OCR quá6000ký tự; cần xem lại trang.')
+                region_limit = 6000 if self.is_api else AGY_MAX_CHARACTERS
+                if any(len(i.region.text) > region_limit for i in items):
+                    raise OnlineProviderError('INVALID_REQUEST', f'Vùng OCR quá {region_limit} ký tự; cần xem lại trang, không cắt chữ.')
                 yield items
             except CancelledError:
                 raise
@@ -94,6 +109,31 @@ class MultiPageAGY:
 
     def receipt_key(self, item):
         return digest([item.id, self.identity])
+
+    def wait_before_next_invocation(self):
+        """Worker-only, after validation; cache-only batches never enter this wait."""
+        if self.is_api or not self.manager.control.agy_batch_completed:
+            return
+        minimum = getattr(self.provider, 'minimum_batch_interval_seconds', 0)
+        if type(minimum) not in (int, float) or not math.isfinite(minimum) or minimum < 0:
+            raise ProviderSuspended('RATE_LIMITED', 'Khoảng chờ tối thiểu của provider không xác minh được; dừng gửi.')
+        deadline = time.monotonic() + max(random.uniform(*AGY_WAIT_SECONDS), minimum)
+        last_shown = None
+        while True:
+            self.manager.control.checkpoint()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            shown = math.ceil(remaining)
+            if shown != last_shown:
+                self.manager.emit(dict(type='agy_batch_wait', stage='Đang chờ trước batch tiếp theo',
+                                       remaining_seconds=shown))
+                last_shown = shown
+            # Cancel wakes this condition immediately; pause is handled by checkpoint.
+            with self.manager.control.condition:
+                if not self.manager.control.cancelled:
+                    self.manager.control.condition.wait(min(.2, remaining))
+        self.manager.control.checkpoint()
 
     def translate_batch(self, batch):
         m, service = self.manager, self.service
@@ -113,10 +153,16 @@ class MultiPageAGY:
                 missing.append(item)
                 protected.append(deferred[0][0])
         if missing:
+            self.wait_before_next_invocation()
             # Diagnostic identity only: does not enter recipe/cache/context decisions.
             batch_meta = dict(batch_id=digest([i.id for i in missing]),
                 page_count=len({i.page for i in missing}), region_count=len(missing),
                 source_characters=sum(len(i.region.text) for i in missing))
+            if not self.is_api:
+                context_meta = getattr(self.provider, 'error_context', None)
+                if isinstance(context_meta, dict):
+                    context_meta.update(job_id=m.job_id, chapter_id=m.chapter_id,
+                        batch_id=batch_meta['batch_id'], final_job_state='paused_provider')
             def attach(exc, observed=None):
                 if self.is_api:
                     from providers.gemini_diagnostics import clean
@@ -138,10 +184,13 @@ class MultiPageAGY:
                 targets = self.provider.translate_batch(protected, missing[0].region.language,
                     item_ids=[i.id for i in missing], context=self.context if m.options.agy_context else [])
             except Exception as exc:
+                if not self.is_api and hasattr(self.provider,'record_failure') and not getattr(exc,'agy_error_attempt_id',None):
+                    self.provider.record_failure(exc, 'APP_PREFLIGHT' if self.provider.last_capture.started is False else 'UNKNOWN')
                 attach(exc)
                 raise
             if len(targets) != len(missing):
                 error = ProviderSuspended('INVALID_RESPONSE', 'AGY không trả đủ vùng; không tự retry.')
+                if not self.is_api and hasattr(self.provider,'record_failure'): self.provider.record_failure(error, 'VALIDATION')
                 attach(error)
                 raise error
             for item, target in zip(missing, targets):
@@ -152,6 +201,9 @@ class MultiPageAGY:
                     m.journal['regions'][self.receipt_key(item)] = dict(context=context, target_hash=digest(valid))
                     m.resume_store.save(m.journal)  # Commit every validated region before rendering.
                 except Exception as exc:
+                    if not self.is_api and hasattr(self.provider,'record_failure'):
+                        self.provider.error_context.pop('final_job_state', None)
+                        self.provider.record_failure(exc, 'VALIDATION')
                     attach(exc, getattr(self.provider, 'last_diagnostic', None))
                     exc.region_index = item.region_index
                     self.errors[item.page] = (exc, dict(service.last_attempt))
@@ -173,6 +225,8 @@ class MultiPageAGY:
             self.context = []
         m.journal.update(context=self.context, context_provider=self.identity)
         m.resume_store.save(m.journal)
+        if missing and not self.is_api:
+            self.manager.control.agy_batch_completed = True
 
     def for_page(self, path, regions):
         key = str(path)

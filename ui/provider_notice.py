@@ -1,5 +1,6 @@
 """Dismissible provider message; closing it never resumes work."""
 from datetime import datetime, timezone
+import re
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QWidget, QToolButton, QPlainTextEdit
 
@@ -70,7 +71,8 @@ class ProviderNotice(QWidget):
         known = {'API_KEY_MISSING', 'FREE_TIER_UNCONFIRMED', 'READY_UNVERIFIED', 'AUTH_REQUIRED',
                  'ACCESS_DENIED', 'MODEL_UNAVAILABLE', 'RATE_LIMITED', 'QUOTA_EXCEEDED', 'NETWORK_ERROR',
                  'TIMEOUT', 'INVALID_RESPONSE', 'REQUEST_BUDGET', 'PROVIDER_UNAVAILABLE', 'INVALID_REQUEST',
-                 'RESPONSE_BLOCKED', 'UNEXPECTED_TOOL_USE', 'CANCELLED', 'PAUSED_BY_USER', 'SAVED_ERROR', 'SOURCE_ACCESS_DENIED'}
+                 'RESPONSE_BLOCKED', 'UNEXPECTED_TOOL_USE', 'CANCELLED', 'PAUSED_BY_USER', 'SAVED_ERROR', 'SOURCE_ACCESS_DENIED',
+                 'AGY_AUTOMATIC_EXTENSIONS','AGY_NOT_FOUND','AGY_MODEL','AGY_CAPABILITY','AGY_INITIALIZATION_ERROR','AGY_START_FAILED'}
         code = event.get('code') if event.get('code') in known else 'UNKNOWN_ERROR'
         local = event.get('phase') == 'local_preflight' and event.get('request_sent') is False
         config = code in ('FREE_TIER_UNCONFIRMED', 'API_KEY_MISSING')
@@ -125,18 +127,34 @@ class ProviderNotice(QWidget):
             facts = 'Đã nhận HTTP response' + (f" ({api['http_status']})" if api['http_status'] is not None else '') + '. Output/cache hoàn tất được giữ; không tự retry.'
         remedy = ('Mở Cài đặt Gemini API → kiểm tra project ở Google AI Studio → xác nhận Free tier khi đúng → chủ động Tiếp tục hoặc Bắt đầu.'
                   if config else 'Xem mã lỗi và diagnostic cục bộ. Chủ động Tiếp tục khi đã xử lý nguyên nhân; không tự retry hoặc đổi provider.')
+        agy_init = code.startswith('AGY_') and event.get('phase')=='agy_preflight'
+        if agy_init:
+            title = 'AGY bị chặn trước bước dịch'
+            cause = ('Cấu hình hooks/MCP chưa được xác minh an toàn.' if code=='AGY_AUTOMATIC_EXTENSIONS'
+                     else 'AGY không khởi tạo được; xem mã lỗi và cấu hình provider/model.')
+            facts = ('Chưa khởi chạy AGY, chưa gửi yêu cầu dịch từ ứng dụng.' if code=='AGY_AUTOMATIC_EXTENSIONS'
+                     else 'Chưa bắt đầu gửi OCR để dịch; CLI probe có thể đã chạy. Xem metadata để biết trạng thái tiến trình.')
+            facts += ' Công việc tạm dừng; không tạo ảnh Origin mới cho phần pending.'
+            remedy = 'Kiểm tra cấu hình AGY an toàn; không bỏ guard hoặc reset journal. Chủ động tiếp tục hoặc tạo lượt mới sau khi xử lý nguyên nhân.'
+        elif code=='TIMEOUT' and event.get('provider')=='AGY Gemini':
+            title = 'AGY hết thời gian chờ'
+            seconds = event.get('agy_timeout')
+            cause = ('CLI đã chạy nhưng hết thời gian chờ' if event.get('agy_process_started') is True else 'Không nhận được kết quả trong thời gian chờ')
+            if type(seconds) is int and 10<=seconds<=1800: cause += ' '+str(seconds)+' giây'
+            facts = 'Không xác định được backend đã nhận request hay chưa; không tự retry hoặc đổi provider.'
+            remedy = 'Thông tin lỗi được lưu nếu ghi diagnostic thành công. Xem attempt bên dưới khi cần điều tra.'
         delay = event.get('retry_after')
         reset = (' Provider yêu cầu đợi ít nhất ' + str(delay) + ' giây.'
                  if type(delay) is int and 0 <= delay < 10**7 else ' Chưa xác định thời điểm khôi phục.')
         self.title.setText(title + ' • ' + code)
         self.last_code = code
-        self.message.setText(cause + '\n' + facts + '\n' + remedy + ('' if config else reset))
+        self.message.setText(cause + '\n' + facts + '\n' + remedy + ('' if config or agy_init else reset))
         short = ('Mở Cài đặt và kiểm tra project ở AI Studio; chỉ xác nhận khi đúng.' if config else
                  'Đây là lỗi đã lưu; xem chi tiết trước khi chủ động tiếp tục.' if saved else
                  'Kiểm tra quyền truy cập website nguồn; không vượt login/VIP/paywall/CAPTCHA.' if code == 'SOURCE_ACCESS_DENIED' else
                  'Kiểm tra quyền model/project tại AI Studio. Xem Chi tiết; không tự đổi key/billing.' if code == 'ACCESS_DENIED' else
                  'Xem Chi tiết/Nhật ký để biết bằng chứng và cách xử lý; kết quả cũ được giữ.')
-        self.summary.setText(short)
+        self.summary.setText('Kiểm tra cấu hình AGY; đã pause, không tạo Origin mới.' if agy_init else short)
         self.settings.setVisible(config)
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
         provider = event.get('provider', event.get('mode', ''))
@@ -144,6 +162,16 @@ class ProviderNotice(QWidget):
         page = event.get('image_index')
         page_label = ' • Trang ' + str(page) if type(page) is int and 0 < page < 10**7 else ''
         self.log.appendPlainText(stamp + ' • ' + provider + ' • ' + code + page_label + '\n' + facts + '\n' + remedy)
+        model=event.get('model')
+        if isinstance(model,str) and re.fullmatch(r'gemini-[A-Za-z0-9.-]{1,100}',model):
+            self.log.appendPlainText('Model đã cấu hình: '+model)
+        attempt = event.get('agy_attempt_id')
+        if isinstance(attempt,str) and re.fullmatch('[a-f0-9]{32}',attempt):
+            from core.paths import ROOT
+            path = ROOT/'logs/diagnostics/agy_errors'/attempt
+            self.log.appendPlainText('Attempt: '+attempt+' • '+str(path)+
+                (' • Không lưu đủ evidence; giữ lỗi gốc.' if event.get('agy_evidence_error') else ''))
+            self.summary.setText(self.summary.text()+' • Attempt '+attempt)
         if event.get('gemini_api_request'):
             self.log.appendPlainText('Request: ' + api['request_state'] + ' • HTTP: ' + str(api['http_status']) +
                 ' • reason: ' + api['error_reason'] + ' • model: ' + api['model'])

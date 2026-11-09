@@ -1,4 +1,4 @@
-"""Experimental local chapter transaction. No online provider or CLI invocation.
+"""Experimental chapter transaction. AGY generation requires explicit manifest consent.
 
 Only metadata/text is held chapter-wide. Bitmaps are opened sequentially by the
 existing OCR/render pipeline. Artifacts and SQLite must live in a stage3f QA run.
@@ -110,9 +110,9 @@ class _NoTranslationCache:
     def put(self, *args): pass
 
 
-class _MockValidationProvider:
+class _GuardIdentity:
     online = False
-    engine_name = 'Whole chapter mock'
+    engine_name = 'Whole chapter validation'
     def __init__(self, identity): self.identity = identity
     def translate(self, *args): raise ChapterError('WHOLE_UNEXPECTED_TRANSLATION')
 
@@ -122,7 +122,7 @@ class MockWholeChapterTranslator:
     def __init__(self, response_factory, identity='manual-mock-v1'):
         self.response_factory = response_factory
         self.identity = VERSION + ':mock:' + identity
-        self.provider = _MockValidationProvider(self.identity)
+        self.provider = _GuardIdentity(self.identity)
         self.calls = 0
 
 
@@ -133,6 +133,53 @@ class ArgosWholeChapterTranslator:
 
     @property
     def identity(self): return VERSION + ':' + self.provider.identity
+
+
+class AGYWholeChapterTranslator:
+    """Reuse AGY transport/guard with one generation and no CLI capability probes."""
+    def __init__(self, options, timeout=600):
+        from providers.agy import find_agy, WHOLE_PROMPT_VERSION, SESSION_SETTINGS
+        if type(timeout) is not int or not 10 <= timeout <= 1800:
+            raise ChapterError('WHOLE_TIMEOUT_CONFIG')
+        self.path = find_agy(options.agy_executable)  # File lookup/hash only; never runs the executable.
+        self.binary_hash = file_digest(self.path)
+        self.model, self.timeout = options.agy_model, timeout
+        self.identity = 'whole-agy-v1:' + digest([self.binary_hash, self.model,
+            WHOLE_PROMPT_VERSION, SESSION_SETTINGS, VALIDATOR_VERSION, 'region_id-translated_text-v1'])
+        self.provider = _GuardIdentity(self.identity)
+        self.provider.engine_name = 'AGY Gemini whole chapter'
+        self.provider.online = True  # Diagnostic identity only; generation goes through translate_manifest.
+        self.descriptor = dict(kind='agy', executable=str(self.path), model=self.model, timeout=timeout)
+        self.error_context = {}
+        self.last_capture = None
+
+    def translate_manifest(self, manifest, request, workspace, control):
+        from providers.agy import AGYProvider
+        protected = {row['id']: row['text'] for row in request}
+        pages = [dict(page_id=p['page']['id'], page_index=p['page']['index'], regions=[
+            dict(region_id=r['id'], reading_order=r['ocr']['reading_order'],
+                 original_ocr_text=r['ocr']['text'], text=protected[r['id']],
+                 source_language=r['ocr']['language']) for r in p['regions']]) for p in manifest['pages']]
+        packet = dict(schema_version=1, chapter_id=manifest['chapter_id'],
+                      manifest_hash=manifest['content_hash'], pages=pages)
+        provider = AGYProvider(str(self.path), model=self.model, timeout=min(300, self.timeout),
+            max_requests=1, checkpoint=control.checkpoint, cancelled=lambda:control.cancelled,
+            root=workspace/'agy', probe_cli=False, error_context=self.error_context)
+        try:
+            if provider.binary_hash != self.binary_hash:
+                raise ChapterError('WHOLE_AGY_BINARY_CHANGED')
+            targets = provider.translate_whole_chapter(packet, timeout=self.timeout)
+            # Binding is from this one invocation's immutable input, not guessed from free text.
+            return dict(manifest_hash=manifest['content_hash'], translations=[
+                dict(id=r['id'], text=target) for r, target in zip(request, targets)])
+        except Exception as exc:
+            if not getattr(exc,'agy_error_attempt_id',None):
+                provider.record_failure(exc, 'APP_PREFLIGHT' if provider.last_capture.started is False else 'VALIDATION')
+            raise
+        finally:
+            self.last_capture = provider.last_capture
+            provider.last_capture = None  # Whole guard still needs bytes until validation ends.
+            provider.close()
 
 
 class PreparedChapter:
@@ -161,13 +208,13 @@ class WholeChapterJob:
     consent on every start/resume needing more translation. No startup auto-resume.
     """
     def __init__(self, source, workspace, *, options=None, chapter_id=None, translator=None,
-                 ocr=None, control=None, emit=lambda _: None):
+                 ocr=None, control=None, emit=lambda _: None, input_paths=None):
         self.source, self.workspace = Path(source).resolve(), Path(workspace).resolve()
         try:
             relative = self.workspace.relative_to((ROOT / 'output').resolve())
         except ValueError:
             raise ChapterError('WHOLE_QA_WORKSPACE_REQUIRED') from None
-        if not relative.parts or not relative.parts[0].startswith('stage3f-'):
+        if not relative.parts or not relative.parts[0].startswith(('stage3f-', 'stage3g-')):
             raise ChapterError('WHOLE_QA_WORKSPACE_REQUIRED')
         if self.source == self.workspace or self.source.is_relative_to(self.workspace):
             raise ChapterError('WHOLE_SOURCE_OUTPUT_OVERLAP')
@@ -175,9 +222,15 @@ class WholeChapterJob:
             output=str(self.workspace / 'rendered'), mode='Offline', offline_provider='Argos',
             allow_online_fallback=False, recursive=True)
         self.translator = translator or ArgosWholeChapterTranslator()
-        if not isinstance(self.translator, (ArgosWholeChapterTranslator, MockWholeChapterTranslator)):
+        if not isinstance(self.translator, (ArgosWholeChapterTranslator, MockWholeChapterTranslator, AGYWholeChapterTranslator)):
             raise ChapterError('WHOLE_LOCAL_TRANSLATOR_REQUIRED')
+        if isinstance(self.translator, AGYWholeChapterTranslator) and not relative.parts[0].startswith('stage3g-'):
+            raise ChapterError('WHOLE_AGY_NEW_WORKSPACE_REQUIRED')
         self.chapter_id = str(chapter_id or digest(str(self.source)))
+        self.input_paths = None if input_paths is None else tuple(Path(p).resolve() for p in input_paths)
+        if self.input_paths is not None and (len(set(self.input_paths)) != len(self.input_paths)
+                or any(not p.is_relative_to(self.source) for p in self.input_paths)):
+            raise ChapterError('WHOLE_INPUT_CHANGED')
         self.ocr, self.control, self.emit = ocr, control or JobControl(), emit
         self.workspace.mkdir(parents=True, exist_ok=True)
         if any(p.is_symlink() for p in self.workspace.rglob('*')):
@@ -186,6 +239,7 @@ class WholeChapterJob:
         self.manifest_path = self.workspace / 'chapter-ocr-manifest.json'
         self.accepted_path = self.workspace / 'validated-translations.json'
         self.record = None
+        self.validated_regions = 0
 
     def save(self):
         from sources.cache import atomic_json
@@ -208,7 +262,7 @@ class WholeChapterJob:
     def _run(self, allow_translation):
         from core.resume import work_recipe
         from sources.cache import atomic_json, inspect_image
-        files = scan_images(self.source, True, self.workspace)
+        files = list(self.input_paths) if self.input_paths is not None else scan_images(self.source, True, self.workspace)
         if not 1 <= len(files) <= MAX_PAGES:
             raise ChapterError('WHOLE_PAGE_LIMIT')
         pages = [dict(index=n, relative=str(p.relative_to(self.source)), source_hash=file_digest(p),
@@ -223,16 +277,19 @@ class WholeChapterJob:
             ocr_identity = manager.ocr.identity(self.options.language)
             recipe = digest([VERSION, work_recipe(self.options), ocr_identity, adapter.identity])
             if self.path.exists():
-                self.record = verify(read_json(self.path))
-                self.record.pop('content_hash')
-                if (self.record.get('version') != 1 or self.record['recipe'] != recipe
-                        or self.record['chapter_id'] != self.chapter_id or self.record['pages'] != pages):
+                saved = verify(read_json(self.path))
+                saved.pop('content_hash')
+                if (saved.get('version') != 1 or saved['recipe'] != recipe
+                        or saved['chapter_id'] != self.chapter_id or saved['pages'] != pages):
                     raise ChapterError('WHOLE_RECIPE_OR_SOURCE_CHANGED')
+                self.record = saved
             else:
                 if self.manifest_path.exists() or self.accepted_path.exists():
                     raise ChapterError('WHOLE_ORPHAN_ARTIFACT')
                 self.record = dict(version=1, chapter_id=self.chapter_id, recipe=recipe, pages=pages,
                     source=str(self.source), options=self.options.to_dict(),
+                    translator=getattr(adapter, 'descriptor', dict(kind='argos')),
+                    explicit_paths=self.input_paths is not None,
                     ocr={}, state='ocr', render_resume_id=None, accepted_hash=None)
                 self.save()
             self.progress('OCR', len(self.record['ocr']), len(pages))
@@ -268,6 +325,9 @@ class WholeChapterJob:
             else:
                 atomic_json(self.manifest_path, manifest)
             self.check_manifest(manifest, sources=True)
+            self.emit(dict(type='whole_manifest_ready', pages=len(pages), regions=manifest['region_count'],
+                source_characters=manifest['source_characters'], manifest_hash=manifest['content_hash'],
+                agy_attempt_used=bool(self.record.get('agy_attempt_used'))))
             guard = TranslationService(self.options, _NoTranslationCache(), control, offline=adapter.provider)
             flat = [r for p in manifest['pages'] for r in p['regions']]
             namespace = digest([VERSION, manifest['content_hash'], adapter.identity, VALIDATOR_VERSION, self.options.glossary])
@@ -299,17 +359,33 @@ class WholeChapterJob:
             for region in flat:
                 if region['id'] in values and validate(region, values[region['id']]['raw']) != values[region['id']]['target']:
                     raise ChapterError('WHOLE_TRANSLATION_CHANGED')
+                if region['id'] in values:
+                    self.validated_regions += 1
             pending = [r for r in flat if r['id'] not in values]
+            is_agy = isinstance(adapter, AGYWholeChapterTranslator)
+            agy_response_path = self.workspace/'agy-response.json'
+            saved_response = None
+            if is_agy and agy_response_path.exists():
+                raw_receipt = verify(read_json(agy_response_path))
+                if (not self.record.get('agy_attempt_used') or raw_receipt.get('namespace') != namespace
+                        or self.record.get('agy_response_hash') not in (None, raw_receipt['content_hash'])):
+                    raise ChapterError('WHOLE_AGY_RESPONSE_CHANGED')
+                saved_response = parse_response(json.dumps(raw_receipt['response'], ensure_ascii=False), manifest, ids)
+                self.record['agy_response_hash'] = raw_receipt['content_hash']; self.save()
             self.record['state'] = 'translation'; self.save()
             self.progress('TRANSLATION', len(values), len(flat))
-            if pending and not allow_translation:
+            if pending and is_agy and saved_response is None and self.record.get('agy_attempt_used'):
+                raise ChapterError('WHOLE_AGY_ATTEMPT_ALREADY_USED')
+            if pending and not allow_translation and saved_response is None:
                 self.record['state'] = 'awaiting_translation'; self.save()
-                return dict(state='awaiting_translation', pages=len(pages), regions=len(flat), pending_regions=len(pending))
+                return dict(state='awaiting_translation', pages=len(pages), regions=len(flat), pending_regions=len(pending),
+                            source_characters=manifest['source_characters'], manifest_hash=manifest['content_hash'])
             def accept(region, raw):
                 control.checkpoint()
                 target = validate(region, raw)
                 self.check_manifest(manifest)
                 values[region['id']] = dict(raw=raw, target=target)
+                self.validated_regions = len(values)
                 atomic_json(progress_path, seal(dict(namespace=namespace, regions=values)))
                 self.progress('TRANSLATION', len(values), len(flat))
             if pending:
@@ -318,7 +394,38 @@ class WholeChapterJob:
                     deferred = []
                     guard._translate_using(adapter.provider, r['ocr']['text'], r['ocr']['language'], namespace, deferred=deferred)
                     request.append(dict(id=r['id'], text=deferred[0][0], language=r['ocr']['language']))
-                if isinstance(adapter, MockWholeChapterTranslator):
+                if is_agy:
+                    if saved_response is None:
+                        if self.confirmed_manifest_hash != manifest['content_hash']:
+                            raise ChapterError('WHOLE_AGY_CONFIRMATION_REQUIRED')
+                        if len(pending) != len(flat):
+                            raise ChapterError('WHOLE_AGY_RESPONSE_MISSING')
+                        self.check_manifest(manifest, sources=True)
+                        from providers.agy import check_automatic_extensions
+                        from core.agy_error_evidence import AGYErrorCapture
+                        adapter.error_context = dict(job_id=digest(self.workspace.name), chapter_id=self.chapter_id,
+                            batch_id=manifest['content_hash'], final_job_state='blocked', configured_timeout=adapter.timeout,
+                            preflight_step='AUTOMATIC_EXTENSIONS')
+                        # Pure local preflight after consent; never reset a historical budget.
+                        try:
+                            check_automatic_extensions()
+                        except Exception as exc:
+                            capture = AGYErrorCapture(adapter.model, adapter.timeout, adapter.error_context)
+                            capture.failure(exc, 'APP_PREFLIGHT'); exc._agy_capture = capture
+                            raise
+                        # Commit before process creation. Crash/timeout still consumes this journal's attempt.
+                        self.record.update(agy_attempt_used=True, agy_manifest_hash=manifest['content_hash'])
+                        self.save()
+                        self.emit(dict(type='whole_agy_running', stage='AGY đang xử lý toàn chương — một invocation'))
+                        response = adapter.translate_manifest(manifest, request, self.workspace, control)
+                        self.check_manifest(manifest, sources=True)
+                        saved_response = parse_response(json.dumps(response, ensure_ascii=False), manifest, ids)
+                        receipt = seal(dict(namespace=namespace, response=response))
+                        atomic_json(agy_response_path, receipt)
+                        self.record['agy_response_hash'] = receipt['content_hash']; self.save()
+                    for r in pending:
+                        accept(r, saved_response[r['id']])
+                elif isinstance(adapter, MockWholeChapterTranslator):
                     adapter.calls += 1
                     response = adapter.response_factory(dict(manifest_hash=manifest['content_hash'], regions=request))
                     targets = parse_response(response, manifest, {r['id'] for r in pending})
@@ -346,7 +453,7 @@ class WholeChapterJob:
             renderer = ProcessingManager(self.options, cache=cache, control=control, emit=event,
                 ocr=manager.ocr, service=service, prepared_chapter=plan, chapter_id=self.chapter_id,
                 diagnostic_root=self.workspace / 'diagnostics', resume_id=self.record['render_resume_id'])
-            result = renderer.run()
+            result = renderer.run([str(p) for p in files])
             self.check_manifest(manifest, sources=True)
             if verify(read_json(self.accepted_path))['content_hash'] != accepted['content_hash']:
                 raise ChapterError('WHOLE_TRANSLATION_RECEIPT_CHANGED')
@@ -357,9 +464,12 @@ class WholeChapterJob:
             service.close()
             cache.close()
 
-    def run(self, *, allow_translation=False):
+    def run(self, *, allow_translation=False, confirmed_manifest_hash=None):
         if not _active.acquire(blocking=False):
             return dict(state='blocked', error_code='WHOLE_JOB_ACTIVE')
+        self.confirmed_manifest_hash = confirmed_manifest_hash
+        self.validated_regions = 0
+        self.record = None
         started = time.monotonic()
         lock = None
         try:
@@ -383,12 +493,29 @@ class WholeChapterJob:
                     'MISSING_MODEL' if isinstance(exc, MissingModelError) else
                     getattr(exc, 'code', None) or (str(exc) if isinstance(exc, ChapterError) else type(exc).__name__))
             result = dict(state='cancelled' if isinstance(exc, CancelledError) else 'blocked', error_code=code)
+            if isinstance(self.translator, AGYWholeChapterTranslator):
+                from core.agy_error_evidence import error_reference
+                capture = getattr(exc, '_agy_capture', None) or self.translator.last_capture
+                if capture and (getattr(exc, '_agy_capture', None) is not None or code in
+                        ('NUMERIC_MISMATCH','NumericMismatchError','WHOLE_RESPONSE_IDS','WHOLE_RESPONSE_IDS_OR_TEXT',
+                         'WHOLE_JSON_INVALID','WHOLE_MANIFEST_CHANGED','WHOLE_TRANSLATION_CHANGED')):
+                    capture.failure(exc, 'VALIDATION', validation_code=code)
+                    capture.finish(result['state'])
+                    result.update(error_reference(exc))
             if self.record:
+                observed = getattr(exc, 'agy_diagnostic', None)
+                if isinstance(self.translator, AGYWholeChapterTranslator) and isinstance(observed, dict):
+                    from providers.agy_diagnostics import sanitize
+                    self.record['agy_diagnostic'] = sanitize(observed)
                 self.record.update(state=result['state'], error_code=code); self.save()
         finally:
             if lock is not None:
                 lock.close()
             _active.release()
+            if isinstance(self.translator, AGYWholeChapterTranslator) and self.translator.last_capture:
+                self.translator.last_capture.stdout = self.translator.last_capture.stderr = b''
         result['elapsed_seconds'] = time.monotonic() - started
+        result['validated_regions'] = self.validated_regions
+        result['agy_attempt_used'] = bool(self.record and self.record.get('agy_attempt_used'))
         self.emit(dict(result, type='whole_finished'))
         return result
