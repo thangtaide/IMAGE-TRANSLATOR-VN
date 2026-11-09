@@ -51,7 +51,7 @@ class Options:
     diagnostic_text: bool = True
     agy_executable: str = ''
     agy_model: str = 'gemini-3.8-flash-medium'
-    agy_timeout: int = 90
+    agy_timeout: int = 300
     agy_max_requests: int = 64
     agy_batch_chars: int = 3000
     agy_batch_regions: int = 60

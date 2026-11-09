@@ -8,11 +8,11 @@ from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QThread, Qt, QUrl, Signal, QSignalBlocker
+from PySide6.QtCore import QThread, Qt, QUrl, Signal, QSignalBlocker, QTimer
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog,
     QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget, QGroupBox, QToolButton, QMenu, QSizePolicy)
+    QTableWidgetItem, QVBoxLayout, QWidget, QGroupBox, QToolButton, QMenu, QSizePolicy, QApplication)
 
 from core.paths import CACHE, CONFIG, ROOT
 from core.pipeline import JobControl
@@ -191,6 +191,17 @@ class ComicSourcesPanel(QWidget):
         row.addWidget(self.location, 1)
         row.addWidget(self.browse)
         row.addWidget(self.analyze)
+        from sources.tooncn_connection import connection
+        self.tooncn_connection=connection()
+        self.tooncn_connect=QPushButton('ToonCN: TẮT')
+        self.tooncn_connect.setCheckable(True)
+        self.tooncn_connect.setToolTip('Bật kết nối extension ToonCN. Chỉ đọc trang ứng dụng yêu cầu; không gửi lịch sử duyệt web.')
+        self.tooncn_connect.toggled.connect(self.toggle_tooncn)
+        self.tooncn_timer=QTimer(self)
+        self.tooncn_timer.setInterval(5000)
+        self.tooncn_timer.timeout.connect(self.update_tooncn_connection)
+        self.tooncn_timer.start()
+        QApplication.instance().aboutToQuit.connect(self.tooncn_connection.disable)
         inputs.addLayout(row)
         self.advanced = QToolButton()
         self.advanced.setText('Tùy chọn nguồn / cache')
@@ -286,6 +297,8 @@ class ComicSourcesPanel(QWidget):
         layout.addWidget(self.download_status)
         controls = QGridLayout()
         controls.setSpacing(8)
+        # Remains usable while inputs are disabled during a source/download job.
+        controls.addWidget(self.tooncn_connect,1,0,1,2)
         self.start = QPushButton('Dịch ảnh đã có')
         self.download = QPushButton('Tải và dịch')
         self.download.setEnabled(False)
@@ -385,6 +398,27 @@ class ComicSourcesPanel(QWidget):
         self.source_changed(clear=False)
         self.set_busy(False)
 
+    def toggle_tooncn(self,enabled):
+        try:
+            if enabled:self.tooncn_connection.enable()
+            else:self.tooncn_connection.disable()
+            self.status.setText('Đã bật kết nối ToonCN; chỉ đọc trang được yêu cầu. Reload extension nếu chưa kết nối.' if enabled
+                                else 'Đã tắt kết nối ToonCN; dừng đọc trang tự động.')
+        except Exception:
+            self.tooncn_connection.disable()
+            self.status.setText('Không bật được kết nối ToonCN (TOONCN_CONNECTION_ERROR); không đọc dữ liệu Chrome.')
+        self.update_tooncn_connection()
+
+    def update_tooncn_connection(self):
+        try:self.tooncn_connection.pulse()
+        except Exception:
+            self.tooncn_connection.enabled=False
+        active=self.tooncn_connection.enabled
+        with QSignalBlocker(self.tooncn_connect):self.tooncn_connect.setChecked(active)
+        state=self.tooncn_connection.status()
+        self.tooncn_connect.setText('ToonCN: BẬT' + (' ✓' if state=='CONNECTED' else '') if active else 'ToonCN: TẮT')
+        self.tooncn_connect.setToolTip('ToonCN: '+state+'; chỉ đọc trang ứng dụng yêu cầu. Tắt để ngừng thu thập.')
+
     def invalidate_collection(self, *_):
         self.source_resume_id = None
         self.loaded_input = None
@@ -407,6 +441,7 @@ class ComicSourcesPanel(QWidget):
 
     def source_changed(self, *_, clear=True):
         online = self.kind.currentIndex() == 2
+        self.tooncn_connect.setVisible(online)
         if hasattr(self, 'resume_store'):
             self.restorable = self.resume_store.latest('source', lambda data:
                 (data.get('comic', {}).get('site_id') != 'local') == online)

@@ -357,7 +357,7 @@ class GeminiPipelineTests(unittest.TestCase):
         with patch('requests.Session.post',side_effect=AssertionError('GUI must not request')):
             self.assertEqual(window.mode.currentText(),'Offline')
             for mode in ['Offline','Online Free','AI Gemini AGY',MODE]:
-                self.assertGreaterEqual(window.mode.findText(mode),0)
+                self.assertGreaterEqual(window.mode.findData(mode),0)
             window.mode.setCurrentText(MODE);self.assertIn('GEMINI_API_KEY',window.privacy.text())
             self.assertNotIn(CANARY,window.privacy.text())
             settings=SettingsDialog(self.options(),window)

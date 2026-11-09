@@ -206,7 +206,7 @@ class CompactUITests(unittest.TestCase):
     def test_four_methods_layout_preserves_values_and_fallback_off(self):
         w=self.window()
         for mode in ['Offline','Online Free','AI Gemini AGY',MODE]:
-            w.mode.setCurrentText(mode);self.app.processEvents()
+            w.mode.setCurrentIndex(w.mode.findData(mode));self.app.processEvents()
             self.assertEqual(w.collect_options().mode,mode)
             self.assertFalse(w.online_provider.isVisible());self.assertFalse(w.offline_provider.isVisible())
             self.assertFalse(w.allow_fallback.isVisible());self.assertFalse(w.collect_options().allow_online_fallback)

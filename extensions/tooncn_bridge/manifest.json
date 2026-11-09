@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Image Translator VN - ToonCN Bridge",
+  "version": "0.3.0",
+  "description": "ToonCN-only app-requested local browser connection. No cookies or external server.",
+  "minimum_chrome_version": "105",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3E8c77mCpcUyI/mpg2yH9QBiwvBpGPJC3ILIcqCNSlr49NaRSroFDsVQVBuGqvPn+xujapm2ESlAM9OY8Q+dZxhMQ84EQIYiMw+VN7Su3Xq7e+RkGuJ7za5KjgVHRXXcRgehsnec1Zr6xBW/RPR04xiV7xEnU+M46/sJ5DnvbZ3iPO8mDDOBNsFaKCh/bMWnqpv34XKsMn6vmxsPMbepX5+cIzS/QhcQ762Z4CrAMs31m+EsPvCnAbgWK5XH3Lk2X4FeNxDgL5nplqDzpj1OkSbY22JkHhGmLEQc3LKSCsNPtktcZFubWyPTvEs53tmBURK9pYAnfSayJsC9sW255QIDAQAB",
+  "permissions": [
+    "scripting",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "https://tooncn.net/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Gửi trang ToonCN cho Image Translator VN"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

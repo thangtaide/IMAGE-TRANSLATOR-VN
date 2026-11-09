@@ -1,5 +1,12 @@
 # IMAGE TRANSLATOR VN
 
+## ToonCN qua Chrome đã cấp quyền
+
+Trong Link truyện online, bật **ToonCN**, dán URL truyện/chương rồi phân tích
+và tải/dịch theo luồng hiện có. Extension0.3 nhận yêu cầu tự động, không cần
+Gửi trang từng lần. Live QA có32chương,316URLảnh và3ảnh mẫu hợp lệ; chưa tải
+đủ chương hoặc chạy dịch ToonCN thật. Xem [cách dùng/cập nhật extension](extensions/tooncn_bridge/README.md).
+
 ## Stage3H — chọn Whole Chapter tại cửa sổ chính (chưa kiểm thử)
 
 Mở bản source bằng `run_source.bat`. Chọn **AI Gemini AGY — Toàn chương

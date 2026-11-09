@@ -27,7 +27,7 @@ SOURCES = {'APP_PREFLIGHT', 'CLI_START', 'CLI_TIMEOUT', 'CLI_EXIT', 'CLI_RESPONS
 ERROR_CODES = {'UNKNOWN','CANCELLED','AGY_MODEL','AGY_NOT_FOUND','AGY_CAPABILITY','AGY_AUTOMATIC_EXTENSIONS',
     'AGY_INITIALIZATION_ERROR','AGY_START_FAILED','INVALID_REQUEST','AUTH_REQUIRED','ACCESS_DENIED',
     'MODEL_UNAVAILABLE','QUOTA_EXCEEDED','RATE_LIMITED','TIMEOUT','INVALID_RESPONSE','EMPTY_RESPONSE',
-    'CLI_EXIT_ERROR','PROVIDER_UNAVAILABLE','REQUEST_LIMIT','WHOLE_COMMAND_LIMIT','WHOLE_PAYLOAD_LIMIT',
+    'CLI_EXIT_ERROR','AGY_PROCESS_CLEANUP','PROVIDER_UNAVAILABLE','REQUEST_LIMIT','WHOLE_COMMAND_LIMIT','WHOLE_PAYLOAD_LIMIT',
     'WHOLE_TIMEOUT_CONFIG','NUMERIC_MISMATCH','TRANSLATION_VALIDATION_ERROR','WHOLE_JSON_INVALID',
     'WHOLE_RESPONSE_IDS','WHOLE_RESPONSE_IDS_OR_TEXT','WHOLE_MANIFEST_CHANGED','WHOLE_TRANSLATION_CHANGED'}
 
@@ -211,6 +211,11 @@ class AGYErrorCapture:
                 process_state='NOT_STARTED' if self.started is False else 'EXIT_OBSERVED' if self.exit_code is not None else 'UNKNOWN',
                 elapsed_seconds=round(self.elapsed if self.elapsed is not None else time.monotonic()-self.started_at, 3),
                 configured_timeout=self.timeout if type(self.timeout) in (int,float) and math.isfinite(self.timeout) else None,
+                watchdog_timeout_seconds=context.get('watchdog_timeout_seconds') if
+                    type(context.get('watchdog_timeout_seconds')) in (int,float) and
+                    math.isfinite(context['watchdog_timeout_seconds']) and 0 < context['watchdog_timeout_seconds'] <= 2000 else None,
+                timeout_layer=getattr(exc, 'agy_timeout_layer', None) if
+                    getattr(exc, 'agy_timeout_layer', None) in ('CLI_TOTAL','WRAPPER_TOTAL') else None,
                 invocation_kind=context.get('invocation_kind') if context.get('invocation_kind') in ('HELP','VERSION','TRANSLATION') else 'PREFLIGHT',
                 preflight_step=_token(context.get('preflight_step')) if source=='APP_PREFLIGHT' else None,
                 observation_state=state, response_observed=bool(self.stdout),

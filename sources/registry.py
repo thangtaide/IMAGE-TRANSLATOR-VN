@@ -1,8 +1,9 @@
 from sources.contracts import InvalidURL, UnsupportedWebsite
 from sources.kuaikan import KuaikanAdapter
+from sources.tooncn import ToonCNAdapter
 from sources.security import https_url
 
-ADAPTERS=(KuaikanAdapter(),)
+ADAPTERS=(KuaikanAdapter(),ToonCNAdapter())
 
 
 def resolve_adapter(url: str):

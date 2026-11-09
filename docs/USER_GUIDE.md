@@ -1,5 +1,56 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## ToonCN qua Chrome cá nhân
+
+ToonCN đã nối adapter/GUI và tải mẫu thật: truyện 为民服务App có32chương đang
+hiển thị, chương1 có316URL ảnh, đã tải3JPEG720×800 hợp lệ. Đây là nghiệm thu
+mẫu, chưa tải đủ chương hoặc chạy dịch ToonCN thật trong QA.
+
+Reload ToonCN Bridge để nạp mã cuối (không thêm quyền), mở lại source bằng
+`run_source.bat`, vào Link truyện online → bật **ToonCN: BẬT**. Dán URL truyện
+→ Phân tích link → chọn chương → Phân tích chương đã chọn → Tải và dịch.
+URL chương có thể dán trực tiếp. Không phải bấm Gửi trang từng lần; không cần
+profile QA, CDP hoặc copy DOM/cookie. Chọn provider dịch như trước, không tự đổi.
+Tắt ToonCN để dừng kết nối, mặc định TẮT sau mở lại ứng dụng.
+
+Chrome phải còn phiên truy cập hợp lệ; nếu xuất hiện challenge, bạn tự xác minh.
+Kết nối chỉ đọc/tải trang ToonCN ứng dụng yêu cầu, không tự tải toàn bộ truyện.
+Xem [quyền, giới hạn, cách cài/gỡ](../extensions/tooncn_bridge/README.md).
+
+## Chương5 đã có đủ ảnh Batch và Whole, 09/11/2026
+
+Batch đã hoàn tất109ảnh tại
+`output/stage3g-chapter5-20261109T105339Z-corrected-batch/rendered/`.
+Whole đủ109ảnh tại
+`output/stage3g-chapter5-20261109T105339Z-corrected-whole/rendered/`.
+Mỗi chế độ có93vùng dịch trên51trang;58trang không có vùng OCR cần dịch,
+không phải fallback lỗi. Mở các thư mục này để đọc, không cần chạy dịch lại.
+
+Batch AGY hiện có ngân sách CLI300giây; wrapper thêm15giây để nhận kết quả
+kết thúc/cleanup. Có thể chỉnh10–300giây trong Cài đặt. Whole vẫn600giây.
+Không tự retry sau timeout; init/input DONE không có nghĩa dịch xong. Giữ
+model, chọn chế độ Batch hoặc Toàn chương trên cửa sổ chính như trước; Whole
+vẫn yêu cầu xác nhận riêng. Mở ứng dụng bằng `run_source.bat`.
+Đợt QA đã dùng hết6/6lượt; Codex không gửi thêm yêu cầu.
+
+## AGY sau sửa guard, 09/11/2026
+
+Phần dưới là lịch sử lượt nghiệm thu trước khi sửa timeout.
+
+Chọn AGY Batch hoặc AGY Toàn chương từ dropdown chính như trước; Offline
+vẫn là mặc định. Đã tắt hook hiện có bằng enabled=false sau backup bảo vệ;
+không cần xóa/đổi tên hooks.json hoặc thay tài khoản. Nếu bật lại hook hoặc
+thêm plugin/MCP, ứng dụng vẫn có thể chặn vì chính sách an toàn.
+
+Live QA chương5 mới chỉ hoàn tất59/109ảnh Batch,44vùng dịch;35ảnh trong số
+đó không có vùng cần dịch. Có thể đọc phần này tại
+`output/stage3g-chapter5-20261109T105339Z-corrected-batch/rendered/`.
+Không coi phần Batch này là chương đầy đủ. Whole đã được người dùng cho phép
+riêng và hoàn tất109ảnh tại
+`output/stage3g-chapter5-20261109T105339Z-corrected-whole/rendered/`.
+Batch tiếp TIMEOUT; không bấm chạy lại liên tiếp khi chưa có quyết định xử lý.
+Xem [báo cáo chương5](AGY_CHAPTER5_ACCEPTANCE_REPORT.md) trước nghiệm thu tiếp.
+
 ## Stage3J — chủ động dịch lại từ đầu (chưa kiểm thử)
 
 1. Mở source bằng `run_source.bat` (Codex không chạy). Chọn AGY Batch hoặc

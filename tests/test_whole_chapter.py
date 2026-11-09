@@ -373,6 +373,7 @@ class WholeChapterQtTests(unittest.TestCase):
                     return super().recognize(*args)
             adapter = MockWholeChapterTranslator(complete)
             def job(source, workspace, **kwargs):
+                self.assertIsNone(kwargs.pop('translator', None))
                 return WholeChapterJob(source, workspace, translator=adapter, ocr=SlowOCR(), **kwargs)
             dialog = WholeChapterDialog(Options(source=str(source)))
             dialog.workspace = root/'run'; dialog.allow.setChecked(True); dialog.show()

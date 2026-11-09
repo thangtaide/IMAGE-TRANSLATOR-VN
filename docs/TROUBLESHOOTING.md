@@ -1,5 +1,58 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## ToonCN — kết nối Chrome và lỗi nguồn
+
+Đã kiểm tra Chrome thật/Native Messaging:32chương,316URLảnh và3ảnh tải hợp lệ.
+Nếu ứng dụng báo `TOONCN_CONNECTION_OFF`, bật nút ToonCN trong tab Link truyện.
+Nếu đang chờ extension/timeout, Reload ToonCN Bridge bản0.3 và kiểm tra popup;
+không lấy cookie hoặc bật CDP. Không cần register_host.bat lại nếu đã đăng ký.
+
+`CHALLENGE_PENDING`/`ACCESS_DENIED` là lỗi truy cập nguồn, không phải Gemini/
+AGY quota. `RATE_LIMITED` dừng, không tự retry. `UNEXPECTED_NAVIGATION` dừng
+nếu trang đã sang URL khác; tab mới cần chờ load trước khi kiểm URL (đã sửa).
+`*_MISSING/CHANGED/SEQUENCE_*` là DOM/thứ tự ảnh không khớp; không trả danh sách
+rỗng như thành công. SVG readerarea.svg là placeholder, không được tải như ảnh
+truyện. Transport8MiB/ảnh,500ảnh/chương; quá hạn/quota báo lỗi, không tự cắt.
+
+Runtime-v2 chỉ giữ dữ liệu truyền tạm tối đa10phút, không xóa cache/journal cũ.
+Nguồn/output đã tải theo lệnh người dùng dùng cơ chế bảo toàn cũ. Chi tiết:
+[ToonCN Bridge](../extensions/tooncn_bridge/README.md),
+[báo cáo và giới hạn nghiệm thu](TOONCN_ADAPTER_INVESTIGATION.md).
+
+## AGY timeout và process cleanup, 09/11/2026
+
+- Timeout90.250s ở attempt6585b2c5193446358275455ec4896c01 do watchdog local;
+  chưa chứng minh nguyên nhân backend không trả terminal. Không kết luận quota
+  hoặc tự gửi lại chỉ từ init/user_input DONE.
+- Batch nay CLI300s (setting10–300s), wrapper315s; Whole CLI600s/wrapper615s.
+  `WRAPPER_TOTAL` phân biệt `CLI_TOTAL` khi terminal có print_timeout. Exit0
+  không đủ chấp nhận bản dịch; JSON/ID/numeric/glossary vẫn bắt buộc.
+- Windows runner tạo cây process riêng trước khi CLI chạy và cleanup bằng Job
+  Object, kể cả root đã exit. `AGY_PROCESS_CLEANUP`: không xác minh được đã dọn
+  cây thuộc invocation; dừng gửi tiếp, xem diagnostic. Không kill hàng loạt
+  process theo tên, không tác động psmux/Claude/Codex khác. Không bỏ guard.
+- Hai lượt Batch cuối đã hoàn tất93vùng/109ảnh tổng,0fallback. Giữ lịch sử lỗi,
+  receipt và partial evidence bảo vệ; không coi một lần chạy thành công là
+  bằng chứng đã xác định lỗi upstream. Xem [báo cáo](AGY_CHAPTER5_ACCEPTANCE_REPORT.md).
+
+## AGY guard và lỗi live chương5, 09/11/2026
+
+Lịch sử dưới đây là trạng thái trước khi hoàn tất Batch.
+
+- AGY1.5.3 strict validator nhận enabled=false boolean ở definition hook.
+  Guard mới chỉ cho qua schema disabled-only đã xác minh; active/default,
+  sai kiểu/schema lạ, plugin store chưa review và MCP không rỗng vẫn chặn.
+  Backup config riêng có DACL dưới logs/agy-chapter5-20261109T105339Z/;
+  không chia sẻ/commit backup hoặc thêm wrapper giả.
+- Session plan từng chèn /plan làm xuất hiện read_file bị denied. Luồng dịch
+  nay dùng default mode với strict deny/sandbox. Parser chỉ nhận finish nội
+  bộ khi parameters/response/structured_output/schema khớp; không cho qua
+  file/shell/web/MCP thật, kể cả đã bị CLI từ chối.
+- Lượt QA sửa đã có59ảnh/44vùng hợp lệ nhưng batch tiếp TIMEOUT90s tại trang60;
+  partial chỉ init/input, không terminal. Không kết luận quota, không tự tăng
+  timeout/gửi lại/Whole khi backend còn UNKNOWN. Ledger QA đã khóa gửi tiếp.
+  Xem [báo cáo chương5](AGY_CHAPTER5_ACCEPTANCE_REPORT.md).
+
 ## Stage3J — preflight pause và log chỉ khi lỗi (chưa kiểm thử)
 
 - `AGY_AUTOMATIC_EXTENSIONS`: factory dừng ở cấp provider; phần pending không

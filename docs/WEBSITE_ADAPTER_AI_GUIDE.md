@@ -1,5 +1,21 @@
 # Website Adapter AI Guide — Image Translator VN
 
+## ToonCN: adapter từ DOM Chrome đã cấp quyền
+
+`sources/tooncn.py` được đăng ký trong registry. Native Messaging v2 dùng lease
+ứng dụng và request có ID, chỉ capture URL ToonCN được yêu cầu khi bật kết nối.
+Không dựng HTTP session từ Chrome profile/cookie. Topic dùng #chapterlist,
+reader dùng #readerarea img.ts-main-image, data-src precedes SVG placeholder;
+selector lấy từ DOM thật qua Chrome, fixture ghi provenance và excerpt rõ ràng.
+
+Browser fetch ảnh same-origin rồi chuyển binary có ACK/hash. Downloader hiện
+có được mở đúng hai seam tùy chọn image_fetcher/url_validator; default Kuaikan
+không đổi. ChapterCache → LocalComicJob → ProcessingManager/Whole input giữ
+nguyên luồng cũ. Access/download policy vẫn kiểm riêng, content permission
+UNKNOWN không trở thành giấy phép chính thức. Không tự dịch khi phân tích URL.
+Xem [hướng dẫn](../extensions/tooncn_bridge/README.md) và
+[bằng chứng live](TOONCN_ADAPTER_INVESTIGATION.md).
+
 ## Stage3J — fresh AGY chapter (chưa kiểm thử)
 
 Thao tác người dùng Thêm → Dịch lại toàn bộ chương yêu cầu xác nhận, không

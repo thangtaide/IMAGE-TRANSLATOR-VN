@@ -137,7 +137,8 @@ def _fetch_image(url, directory, limits, checkpoint, progress):
 
 
 def download_images(chapter, images, cache_dir: Path, decision, control=None, progress=None,
-                    *, limit: int | None = None, limits: DownloadLimits | None = None) -> ImageCollection:
+                    *, limit: int | None = None, limits: DownloadLimits | None = None,
+                    image_fetcher=None,url_validator=None) -> ImageCollection:
     """Return verified local files only. A limit is an explicit QA/sample selection."""
     if not decision.allowed:
         raise AccessRestricted(decision.reason)
@@ -153,8 +154,10 @@ def download_images(chapter, images, cache_dir: Path, decision, control=None, pr
     if limit is not None and (type(limit) is not int or not 1 <= limit <= len(images)):
         raise CacheError('Giới hạn mẫu phải nằm trong danh sách ảnh thực tế.')
     selected = images if limit is None else images[:limit]
+    validate_url=url_validator or image_url
+    fetch=image_fetcher or _fetch_image
     for image in images:
-        if not image.source_url or image_url(image.source_url, chapter.chapter_url) != image.source_url:
+        if not image.source_url or validate_url(image.source_url, chapter.chapter_url) != image.source_url:
             raise InvalidURL('Danh sách chứa URL ảnh không an toàn; không bắt đầu tải.')
     directory = cache_dir.resolve()
     if not directory.is_relative_to(CACHE.resolve()) or directory == CACHE.resolve() or cache_dir.is_symlink():
@@ -204,7 +207,7 @@ def download_images(chapter, images, cache_dir: Path, decision, control=None, pr
                 raise CacheError('Ảnh đích không có receipt; giữ nguyên, không tải lại hoặc ghi đè.')
             for attempt in range(limits.attempts):
                 try:
-                    temporary, info = _fetch_image(image.source_url, directory, limits, checkpoint, emit)
+                    temporary, info = fetch(image.source_url, directory, limits, checkpoint, emit)
                     break
                 except (OSError, http.client.HTTPException) as exc:
                     if attempt + 1 >= limits.attempts:

@@ -1,5 +1,112 @@
 # Trạng thái Image Translator VN
 
+## ToonCN qua Chrome — live metadata/tải mẫu/GUI đạt, 10/11/2026
+
+Đã xác minh đăng ký Native Messaging, nhận DOM thật từ Chrome cá nhân sau
+Reload, không đọc profile/cookie/token. Truyện为民服务App hiện có32liên kết
+chương trên DOM; chương1 có316ảnh data-src trong #readerarea. Tải mẫu3JPEG
+720×800 qua chính Chrome, unique hash/thứ tự/bitmap đều hợp lệ; không gọi dịch.
+Không coi số chương mới nhất33 là tổng số: danh sách thực có khoảng trống19.
+
+Adapter ToonCN đã đăng ký, hỗ trợ topic/chapter ID tổng quát. GUI Qt offscreen
+qua Chrome thật nhận32dòng, chọn1chương, phân tích316ảnh và bật nút Tải và dịch.
+Kết nối BẬT/TẮT nằm ngoài vùng input bị khóa, không cần Gửi thủ công mỗi trang.
+Chỉ thu thập theo request, giữ lease20s và dữ liệu truyền tạm10phút; không
+giám sát/lưu mọi trang duyệt. Quyền vẫn chỉtooncn.net, chưa mở www/domain khác.
+
+Full pytest561PASS/10SKIP/0FAIL; full unittest571ca=561PASS/10SKIP/0ERROR;
+targeted cuối67PASS sau bổ sung startup và dọn file tạm an toàn. Dữ liệu bảo vệ
+30.950stat/244SHA không đổi. AGY Batch/Whole, model, OCR/renderer không sửa.
+Không build/Git commit. Giới hạn: chỉ3/316ảnh được tải QA, không nghiệm thu
+OCR/MT/render ToonCN thật. Người dùng Reload bridge mã cuối rồi mở lại source,
+bật kết nối và chọn chương cần dịch. Xem [hướng dẫn](extensions/tooncn_bridge/README.md)
+và [báo cáo](docs/TOONCN_ADAPTER_INVESTIGATION.md).
+
+## ToonCN — chưa tích hợp, truy cập bị challenge, 09/11/2026
+
+Lịch sử dưới đây đã được thay thế bởi kết quả live ở trên; giữ để đối chiếu.
+Chrome cá nhân của người dùng mở được trang nhưng chưa có DOM cho ứng dụng.
+Kiểm tra28process Chrome không thấy TCP listener loopback, không tự bật CDP,
+đóng/restart/profile/cookie. Đã chuẩn bị extension chỉ ToonCN + Native Messaging
+cục bộ và20test local bridge đạt; chưa tự cài/đăng ký host. Người dùng cần
+chạy register_host.bat, Chrome Load unpacked thư mục extensions/tooncn_bridge,
+rồi bấm Gửi trang trên truyện/chương. Chưa có parser/adapter hoặc ảnh tải thật;
+không tính bridge là đã hỗ trợ ToonCN. Xem
+[hướng dẫn cấp quyền](extensions/tooncn_bridge/README.md).
+
+Regression cầu nối cuối: full pytest541PASS/10SKIP/0FAIL; unittest riêng bridge
+20PASS.30.710stat/242SHA bảo vệ không đổi; source AGY/OCR/renderer nguyên vẹn.
+Registry thật/profile Chrome không sửa, native host chưa được đăng ký/cài tự
+động. Trạng thái NEEDS_USER_EXTENSION_PERMISSION, không phải adapter PASS.
+
+Bổ sung lượt Chrome có giao diện/profile QA riêng: sau171giây vẫn VERIFYING,
+main document HTTP403, chưa có DOM truyện. Đã giữ cửa sổ cho người dùng tự
+xác minh, không click CAPTCHA hoặc xuất cookie/token; đang chờ tương tác,
+chưa có adapter hoạt động. Evidence logs/tooncn-browser-20261109T162445Z/.
+
+Đã thử URL https://tooncn.net/webtoon/5701569/ bằng HTTP của ứng dụng và
+Chrome headless profile QA mới. HTTP bị AccessRestricted, Chrome chỉ nhận
+Cloudflare "Just a moment..."; dừng, không vượt challenge. Công cụ web đọc
+được tên为民服务App và11liên kết chương (có thể cached), không đọc được reader.
+Chưa có danh sách ảnh hoặc mẫu tải hợp lệ, không viết parser phỏng đoán/
+đăng ký hỗ trợ giả. AGY/source production không sửa,0lượt dịch;40test nguồn
+local/mock PASS,30.710stat/243SHA giữ nguyên. Xem
+[khảo sát ToonCN](docs/TOONCN_ADAPTER_INVESTIGATION.md). Không gọi đây là
+nghiệm thu ToonCN hoặc yêu cầu người dùng cung cấp DOM.
+
+## AGY Batch chương5 đã đủ109ảnh sau sửa runner, 09/11/2026
+
+Batch và Whole đều109/109bitmap hợp lệ,93vùng dịch trên51trang có chữ;
+58trang không có vùng cần dịch,0fallback lỗi. Đã dùng đủ6/6invocation thật,
+không gửi thêm. Hai lượt cuối81.750s/22.328s, pacing8s (gap10.078s); giữ nguyên
+59ảnh Batch và109ảnh Whole trước đó theo168SHA/receipt, chỉ xử lý50pending QA.
+
+Đã chứng minh wrapper cũ cắt tại90.250s, trùng ngân sách CLI90s, và fixture
+runner cũ có thể để child sống sau root exit. Runner mới dùng Windows Job
+Object cách ly cây riêng, cleanup kiểm tra active0, không kill session khác;
+CLI Batch300s trong setting10–300s, wrapper thêm15s, Whole600s không đổi.
+Init/input không phải terminal, không kéo dài deadline; partial không được
+chấp nhận. Nguyên nhân upstream lượt cũ không có terminal vẫn chưa chứng minh.
+
+Không đổi planner, guard hooks/MCP, numeric/glossary, model hoặc provider khác.
+Source/default và setting cá nhân AGY đổi300s có backup riêng. Không sửa DB,
+journal/output lịch sử; journal/DB của đúng QA Batch tiếp tục bằng ResumeStore
+có sẵn. Xem [nghiệm thu và lịch sử](docs/AGY_CHAPTER5_ACCEPTANCE_REPORT.md).
+
+Regression cuối: pytest521PASS/10SKIP/0FAIL; unittest531ca=521PASS/10SKIP/
+0ERROR,208.609s. Lượt unittest đầu có1lỗi fixture downloader không tái hiện khi
+chạy riêng và full tuần tự; giữ log và ghi giới hạn, không sửa downloader.
+30.240stat không mất file; thay đổi chỉ đúng QA DB/journal/SHM và setting
+timeout.2.514SHA lịch sử chỉ khác hooks đã đổi trước đó và setting có chủ đích.
+Git10tracked modified/6untracked,0staged, diff --check exit0; .gitignore không đổi.
+
+## AGY chương5 — khôi phục guard, live QA còn bị timeout, 09/11/2026
+
+Mục dưới giữ kết quả của lượt trước; đã được cập nhật bởi nghiệm thu ở trên.
+
+**Whole109/109đã nghiệm thu pipeline; Batch59/109.** CLI1.5.3 strict validator xác
+nhận enabled=false boolean; đã backup DACL riêng và chỉ tắt một hook, giữ
+nguyên handlers/MCP. Guard nhận disabled-only nhưng vẫn fail-closed với
+active/default/unknown/plugin/MCP; recheck trước invocation. Session dịch
+bỏ plan (chèn /plan), giữ strict deny/sandbox. Parser chỉ nhận finish nội bộ
+khớp đủ schema/terminal; các tool khác kể cả denied vẫn chặn. Numeric/glossary,
+planner24trang/60vùng/3.000ký tự, timeout90s/600s và model giữ nguyên.
+
+4/6invocation thật: lượt đầu parser từ chối; lượt sửa dịch44vùng và render59
+trang (24trang có chữ,35không có vùng cần dịch); batch sau TIMEOUT tại trang60.
+0fallback lỗi. Partial không có terminal result, backend UNKNOWN nên đã
+khóa gửi thêm. Người dùng sau đó cho phép riêng1Whole mới: CLI91.562s,
+93vùng hợp lệ,109output,0fallback;51trang có chữ/58không có vùng cần dịch.
+Không tự retry Batch; chờ quyết định về50pending. Output cũ giữ riêng.
+
+Regression cuối:pytest510pass/10skip/0fail; unittest bootstrap510pass/10skip/
+0error. Lượt unittest trực tiếp lỗi import typing.Self được giữ riêng; chạy
+bootstrap runtime trước Qt khắc phục, không đổi dependencies/runtime source.
+29.285stat/2.514SHA bảo vệ: chỉ hooks.json đổi có chủ đích, không mất file.
+
+Xem [báo cáo nghiệm thu AGY chương5](docs/AGY_CHAPTER5_ACCEPTANCE_REPORT.md)
+và evidence logs/agy-chapter5-20261109T105339Z/. Không build/commit/push.
+
 ## Điều tra AGY guard: 59/109 trang và attempt e0b09af0, 09/11/2026
 
 Chỉ đọc source/Git/metadata/config structure; không sửa source/config, chạy

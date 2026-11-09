@@ -352,7 +352,7 @@ class AGYTests(unittest.TestCase):
                              'pending_paths': ['pending.png']})
         window.provider_notice.dismiss.click()
         self.assertTrue(window.provider_paused)
-        self.assertEqual(window.mode.currentText(), MODE)
+        self.assertEqual(window.mode.currentData(), MODE)
         window.close()
 
     def test_settings_refreshes_displayed_agy_model_without_persisting(self):

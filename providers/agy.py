@@ -26,9 +26,10 @@ PROMPT_VERSION = 'comic-vi-id-json-v1-literal-numbers-effort-medium'
 WHOLE_PROMPT_VERSION = 'comic-whole-vi-json-v1'
 WHOLE_INPUT_BYTES = 16_000_000  # Whole-chapter local JSON bound; not a claimed CLI/model token capacity.
 WHOLE_TIMEOUT_MAX = 1800
+CLI_SHUTDOWN_GRACE = 15  # Outer watchdog must outlive the CLI's own total deadline.
 SESSION_SETTINGS = {
     'modelProvider': '', 'useG1Credits': False, 'toolPermission': 'strict',
-    'agentMode': 'plan', 'allowNonWorkspaceAccess': False,
+    'agentMode': '', 'allowNonWorkspaceAccess': False,
     'enableTerminalSandbox': True, 'disableSlashCommands': True,
     'permissions': {'allow': [], 'ask': [], 'deny': [
         'command(*)', 'unsandboxed(*)', 'read_file(*)', 'write_file(*)',
@@ -70,39 +71,84 @@ def child_environment() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k.upper() not in excluded}
 
 
-def check_automatic_extensions() -> None:
-    # CLI hooks/MCP are configured outside session settings. Do not edit or copy
-    # those files or start automatic extensions for a translation-only process.
+def check_automatic_extensions(workspace: Path | None = None) -> None:
+    # AGY 1.5.3's strict validator accepts named hook definitions with boolean
+    # enabled=False. Never infer disablement from a missing field or truthiness.
     base = Path(os.environ.get('USERPROFILE', str(Path.home()))) / '.gemini/config'
-    for name, key in [('hooks.json', 'hooks'), ('mcp_config.json', 'mcpServers')]:
-        path = base / name
-        if not path.is_file() or path.stat().st_size == 0:
-            continue
-        try:
-            if path.stat().st_size > 128_000:
+    scopes = {base}
+    for start in (Path.cwd(), Path(__file__).resolve().parent.parent, workspace):
+        if start is not None:
+            start = Path(start).absolute()
+            scopes.update(parent / '.agents' for parent in (start, *start.parents))
+    events = {'SessionStart', 'PreInvocation', 'PostInvocation', 'Stop', 'PreToolUse', 'PostToolUse'}
+
+    def handler(value):
+        if (not isinstance(value, dict) or set(value) - {'type', 'command', 'timeout'}
+                or value.get('type', 'command') != 'command'
+                or not isinstance(value.get('command'), str) or not value['command'].strip()):
+            raise ValueError()
+        if 'timeout' in value and (type(value['timeout']) is not int or value['timeout'] <= 0):
+            raise ValueError()
+
+    def disabled_hooks(data):
+        if not isinstance(data, dict):
+            raise ValueError()
+        for name, definition in data.items():
+            if (not isinstance(name, str) or not name or not isinstance(definition, dict)
+                    or definition.get('enabled') is not False
+                    or set(definition) - (events | {'enabled'})):
                 raise ValueError()
-            data = strict_json(path.read_text(encoding='utf-8-sig'))
-            active = data.get(key, data) if isinstance(data, dict) else data
-            if active:
+            for event, entries in definition.items():
+                if event == 'enabled':
+                    continue
+                if not isinstance(entries, list):
+                    raise ValueError()
+                for entry in entries:
+                    if event in {'PreToolUse', 'PostToolUse'}:
+                        if (not isinstance(entry, dict) or set(entry) - {'matcher', 'hooks'}
+                                or not isinstance(entry.get('matcher', ''), str)
+                                or not isinstance(entry.get('hooks'), list)):
+                            raise ValueError()
+                        for item in entry['hooks']:
+                            handler(item)
+                    else:
+                        handler(entry)
+
+    try:
+        # No plugin is needed for translation. A nonempty plugin store needs a
+        # separate safety review; do not silently accept its hooks/MCP servers.
+        plugin_roots = {base.parent / 'antigravity-cli/plugins'} | {s / 'plugins' for s in scopes if s != base}
+        for path in plugin_roots:
+            if path.is_symlink() or path.exists() and (not path.is_dir() or any(path.iterdir())):
                 raise ValueError()
-        except (ValueError, OSError, UnicodeError):
-            raise OnlineProviderError('AGY_AUTOMATIC_EXTENSIONS',
-                'AGY có hooks/MCP tự động hoặc cấu hình không xác minh được. Dừng dịch; không sửa cấu hình AGY toàn cục.') from None
+        for scope in scopes:
+            if scope.is_symlink() or scope.exists() and getattr(scope.stat(), 'st_file_attributes', 0) & 0x400:
+                raise ValueError()
+            for name in ('hooks.json', 'mcp_config.json'):
+                path = scope / name
+                if path.is_symlink() or path.exists() and getattr(path.stat(), 'st_file_attributes', 0) & 0x400:
+                    raise ValueError()
+                if not path.exists():
+                    continue
+                if not path.is_file() or path.stat().st_size > 128_000:
+                    raise ValueError()
+                if path.stat().st_size == 0:
+                    continue
+                data = strict_json(path.read_text(encoding='utf-8-sig'))
+                if name == 'hooks.json':
+                    disabled_hooks(data)
+                elif not isinstance(data, dict) or set(data) - {'mcpServers'} or data.get('mcpServers', {}) != {}:
+                    raise ValueError()
+    except (ValueError, OSError, UnicodeError):
+        raise OnlineProviderError('AGY_AUTOMATIC_EXTENSIONS',
+            'AGY có hooks/MCP tự động hoặc cấu hình không xác minh được. Dừng dịch; không sửa cấu hình AGY toàn cục.') from None
 
 
 def stop_owned_process(process) -> None:
+    """Root handle only; Windows descendants are contained by WindowsProcessTree."""
     if process.poll() is not None:
         return
-    if os.name == 'nt':
-        taskkill = str(Path(os.environ['SystemRoot']) / 'System32/taskkill.exe')
-        try:
-            subprocess.run([taskkill, '/PID', str(process.pid), '/T', '/F'],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5,
-                           creationflags=subprocess.CREATE_NO_WINDOW, check=False)
-        except (OSError, subprocess.TimeoutExpired):
-            process.kill()
-    else:
-        process.kill()
+    process.kill()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -110,32 +156,77 @@ def stop_owned_process(process) -> None:
 
 
 def run_bounded(argv: list[str], payload: bytes | None, cwd: Path, timeout: float,
-                cancelled: Callable[[], bool] = lambda: False, limit: int = 1_000_000) -> tuple[int, bytes, bytes]:
+                cancelled: Callable[[], bool] = lambda: False, limit: int = 1_000_000,
+                *, observer: Callable[[dict], None] | None = None) -> tuple[int, bytes, bytes]:
     """Drain both pipes concurrently, cap memory, cancel only this owned process tree."""
+    started = time.monotonic()
     capture = AGYErrorCapture(timeout=timeout)
+    tree = process = None
+    timing = {}
+    cleanup_ok = False
     try:
+        if os.name == 'nt':
+            from providers.agy_process import WindowsProcessTree
+            tree = WindowsProcessTree()
         process = subprocess.Popen(argv, cwd=cwd, env=child_environment(), shell=False,
             stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            creationflags=(subprocess.CREATE_NO_WINDOW | 0x00000004) if os.name == 'nt' else 0)  # CREATE_SUSPENDED
+        capture.started = True
+        timing['process_created_seconds'] = time.monotonic() - started
+        if tree:
+            tree.assign_and_resume(process)
+        timing['process_ready_seconds'] = time.monotonic() - started
     except OSError as exc:
+        if process is not None:
+            process.kill(); process.wait(timeout=5)
+        if tree:
+            tree.close()
         exc._agy_capture = capture
         raise
-    capture.started = True
     overflow = threading.Event()
+    read_error = threading.Event()
     buffers = [bytearray(), bytearray()]
     observed = [0, 0]
     def read(stream, buffer, cap, index):
-        while True:
-            block = stream.read1(4096)  # Return available partial bytes, not a full 4096-byte wait.
-            if not block:
-                return
-            observed[index] += len(block)
-            remaining = cap - len(buffer)
-            buffer.extend(block[:max(0, remaining)])
-            if len(block) > remaining:
-                overflow.set()
-                return
+        cursor = 0
+        try:
+            while True:
+                block = stream.read1(4096)  # Return available partial bytes, not a full 4096-byte wait.
+                if not block:
+                    return
+                observed[index] += len(block)
+                remaining = cap - len(buffer)
+                buffer.extend(block[:max(0, remaining)])
+                if index == 0:
+                    # Only complete, bounded JSON lines. Init/input are NOT model
+                    # progress, and no event ever extends the fixed total deadline.
+                    while True:
+                        end = buffer.find(b'\n', cursor)
+                        if end < 0:
+                            break
+                        line = bytes(buffer[cursor:end]); cursor = end + 1
+                        try:
+                            event = strict_json(line.decode('utf-8'))
+                            step = event.get('step_update', {}) if isinstance(event, dict) else {}
+                            label = (event.get('event') if isinstance(event, dict) else None)
+                            mark = 'init' if label == 'init' else 'terminal_result' if label == 'result' else None
+                            if label == 'step_update' and isinstance(step, dict):
+                                if step.get('step_type') == 'user_input' and step.get('state') == 'DONE':
+                                    mark = 'input_done'
+                                elif step.get('step_type') == 'agent_response':
+                                    mark = 'model_response'
+                                elif step.get('tool_name') == 'finish':
+                                    mark = 'finish'
+                            if mark:
+                                timing.setdefault(mark + '_seconds', time.monotonic() - started)
+                        except (ValueError, UnicodeError, TypeError):
+                            pass  # The authoritative parser still rejects invalid output.
+                if len(block) > remaining:
+                    overflow.set()
+                    return
+        except (OSError, ValueError):
+            read_error.set()
     readers = [threading.Thread(target=read, args=(stream, buffer, cap, index), daemon=True)
                for index, (stream, buffer, cap) in enumerate([(process.stdout, buffers[0], limit), (process.stderr, buffers[1], 64_000)])]
     for thread in readers:
@@ -148,10 +239,43 @@ def run_bounded(argv: list[str], payload: bytes | None, cwd: Path, timeout: floa
             pass
         finally:
             process.stdin.close()
+            timing['stdin_closed_seconds'] = time.monotonic() - started
     writer = threading.Thread(target=write, daemon=True) if payload is not None else None
     if writer:
         writer.start()
-    started = time.monotonic()
+    cleaned = False
+    active_after_cleanup = None
+    def cleanup():
+        nonlocal cleaned, cleanup_ok, active_after_cleanup
+        if cleaned:
+            return
+        cleaned = True
+        deadline = time.monotonic() + 5
+        try:
+            if tree:
+                tree.terminate()  # Also when root already exited: kill owned descendants.
+            else:
+                stop_owned_process(process)
+            process.wait(timeout=max(.01, deadline-time.monotonic()))
+            if tree:
+                active_after_cleanup = tree.active()
+                while active_after_cleanup and time.monotonic() < deadline:
+                    time.sleep(.02); active_after_cleanup = tree.active()
+                cleanup_ok = active_after_cleanup == 0
+            else:
+                cleanup_ok = process.poll() is not None
+        except (OSError, subprocess.TimeoutExpired):
+            cleanup_ok = False
+        finally:
+            if tree:
+                tree.close()  # Kill-on-close remains a final containment boundary.
+        drain = time.monotonic() + 2
+        for thread in ([writer] if writer else []) + readers:
+            thread.join(max(0, drain-time.monotonic()))
+        cleanup_ok = cleanup_ok and not any(t.is_alive() for t in readers) and not (writer and writer.is_alive())
+        for stream in (process.stdout, process.stderr):
+            if stream and not any(t.is_alive() for t in readers):
+                stream.close()
     try:
         while process.poll() is None:
             if cancelled():
@@ -159,11 +283,14 @@ def run_bounded(argv: list[str], payload: bytes | None, cwd: Path, timeout: floa
             if overflow.is_set():
                 raise OnlineProviderError('INVALID_RESPONSE', 'AGY vượt giới hạn stdout/stderr.')
             if time.monotonic() - started >= timeout:
-                raise OnlineProviderError('TIMEOUT', 'AGY vượt timeout; không tự retry hoặc đổi phương thức.')
+                error = OnlineProviderError('TIMEOUT', 'Watchdog AGY hết tổng thời gian; không tự retry hoặc đổi phương thức.')
+                error.agy_timeout_layer = 'WRAPPER_TOTAL'
+                raise error
             time.sleep(.05)
-        for thread in readers:
-            thread.join(2)
-        if overflow.is_set() or any(t.is_alive() for t in readers):
+        cleanup()
+        if not cleanup_ok:
+            raise OnlineProviderError('AGY_PROCESS_CLEANUP', 'Không xác minh được cleanup process tree AGY; dừng gửi tiếp.')
+        if overflow.is_set() or read_error.is_set():
             raise OnlineProviderError('INVALID_RESPONSE', 'Không thu được output AGY trong giới hạn.')
         return process.returncode, bytes(buffers[0]), bytes(buffers[1])
     except (OnlineProviderError, CancelledError, OSError) as exc:
@@ -172,17 +299,18 @@ def run_bounded(argv: list[str], payload: bytes | None, cwd: Path, timeout: floa
             bytes(buffers[0]).count(b'\n'), process.poll(), overflow.is_set())
         raise
     finally:
-        stop_owned_process(process)
-        if writer:
-            writer.join(2)
-        for thread in readers:
-            thread.join(2)
+        cleanup()
         capture.observe(bytes(buffers[0]), bytes(buffers[1]), started=True,
             exit_code=process.poll(), observed=tuple(observed), partial=True,
             elapsed=time.monotonic()-started)
-        for stream in (process.stdout, process.stderr):
-            if stream and not any(t.is_alive() for t in readers):
-                stream.close()
+        if observer:
+            try:
+                observer(dict(pid=process.pid, watchdog_seconds=timeout, elapsed_seconds=time.monotonic()-started,
+                    exit_code=process.poll(), stdout_bytes=observed[0], stderr_bytes=observed[1],
+                    timings=timing, active_processes_after_cleanup=active_after_cleanup,
+                    cleanup_ok=bool(cleanup_ok)))
+            except Exception:
+                pass  # Diagnostics cannot change a valid translation's verdict.
 
 
 def output_schema(ids: list[str], *, whole=False) -> dict:
@@ -243,6 +371,12 @@ def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: in
         if len(terminal) != 1 or not isinstance(terminal[0], dict):
             raise ValueError('Missing or duplicate result')
         result = terminal[0]
+        if result.get('finished_reason') == 'print_timeout':
+            error = ProviderSuspended('TIMEOUT', 'AGY CLI báo hết tổng thời gian; phản hồi bị cắt không được chấp nhận.')
+            error.agy_timeout_layer = 'CLI_TOTAL'
+            raise error
+        if result.get('finished_reason') not in (None, '') and result.get('status') == 'SUCCESS':
+            raise ValueError('Unexpected termination')
         if result.get('status') != 'SUCCESS' or exit_code != 0:
             error = result.get('error')
             code = error.get('code') if isinstance(error, dict) else None
@@ -267,7 +401,32 @@ def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: in
                 return any((key in ('tool_call', 'tool_calls', 'tool_name', 'function_call') and bool(value))
                            or used_tool(value) for key, value in obj.items())
             return isinstance(obj, list) and any(used_tool(v) for v in obj)
-        if any(event.get('event') in ('tool_call', 'tool_use', 'permission_request') or used_tool(event) for event in events):
+        def tool_scan_event(event):
+            # CLI 1.5.3 emits its schema result via the built-in finish step.
+            # Only exempt that exact completion payload, bound to BOTH terminal
+            # representations and our requested schema. External/denied tools
+            # and any other nested indicator still invalidate the entire run.
+            step = event.get('step_update')
+            if (set(event) != {'event', 'step_update'} or event.get('event') != 'step_update'
+                    or not isinstance(step, dict) or step.get('tool_name') != 'finish'
+                    or step.get('step_type') != 'tool' or step.get('state') != 'ACTIVE'
+                    or set(step) - {'conversation_id', 'step_index', 'state', 'step_type',
+                                    'tool_name', 'tool_info', 'duration_seconds', 'usage'}):
+                return event
+            info = step.get('tool_info')
+            if (not isinstance(info, dict) or set(info) != {'name', 'parameters'}
+                    or info.get('name') != 'finish' or not isinstance(result.get('response'), str)):
+                return event
+            try:
+                answer = strict_json(result['response'])
+            except (ValueError, TypeError):
+                return event
+            if (info['parameters'] != answer or result.get('structured_output') != answer
+                    or result.get('json_schema') != output_schema(expected_ids, whole=whole)):
+                return event
+            return dict(event='step_update', step_update={k:v for k,v in step.items() if k != 'tool_name'})
+        if any(event.get('event') in ('tool_call', 'tool_use', 'permission_request') or
+               used_tool(tool_scan_event(event)) for event in events):
             raise ValueError('Unexpected tool use')
         value = result.get('response')
         if not isinstance(value, str):
@@ -302,7 +461,7 @@ def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: in
 
 def parse_response(stdout: bytes, expected_ids: list[str], exit_code: int, *,
                    stderr: bytes = b'', diagnostic: dict | None = None, whole=False) -> list[str]:
-    """Observe the unchanged legacy verdict; classification has no control authority."""
+    """Observe the parser verdict; diagnostic classification has no control authority."""
     def details(accepted, code='NONE', reason='NONE'):
         try:
             return observe(stdout, stderr, exit_code, strict_json, accepted, code, reason)
@@ -326,7 +485,7 @@ def parse_response(stdout: bytes, expected_ids: list[str], exit_code: int, *,
 class AGYProvider(TranslationProvider):
     online, engine_name, retry_count = True, 'AGY Gemini', 0
 
-    def __init__(self, executable: str = '', model: str = 'gemini-3.8-flash-medium', timeout: int = 90,
+    def __init__(self, executable: str = '', model: str = 'gemini-3.8-flash-medium', timeout: int = 300,
                  max_requests: int = 64, checkpoint: Callable = lambda: None,
                  cancelled: Callable[[], bool] = lambda: False, root: Path | None = None, runner=run_bounded,
                  probe_cli: bool = True, error_context: dict | None = None):
@@ -388,8 +547,9 @@ class AGYProvider(TranslationProvider):
                 h.update(block)
         self.binary_hash = h.hexdigest()
 
-    def _invoke(self, argv, payload, work, timeout, *, role='TRANSLATION'):
-        self.last_capture = AGYErrorCapture(self.model, timeout, self.error_context, payload)
+    def _invoke(self, argv, payload, work, timeout, *, role='TRANSLATION', cli_timeout=None):
+        self.last_capture = AGYErrorCapture(self.model, timeout if cli_timeout is None else cli_timeout, self.error_context, payload)
+        self.last_capture.context['watchdog_timeout_seconds'] = timeout
         self.last_capture.context['invocation_kind'] = role
         started = time.monotonic()
         try:
@@ -408,6 +568,7 @@ class AGYProvider(TranslationProvider):
 
     def _error_source(self, exc, *, initialization=False):
         if getattr(exc, 'code', None) == 'TIMEOUT': return 'CLI_TIMEOUT'
+        if getattr(exc, 'code', None) == 'AGY_PROCESS_CLEANUP': return 'UNKNOWN'
         if initialization and self.last_capture.context.get('invocation_kind') not in ('HELP','VERSION','TRANSLATION'):
             return 'APP_PREFLIGHT'
         if self.last_capture.started is False:
@@ -491,7 +652,7 @@ class AGYProvider(TranslationProvider):
     def command(self, ids, timeout, *, whole=False):
         return [str(self.path), '--input-format', 'stream-json', '--output-format', 'stream-json',
             '--json-schema', json.dumps(output_schema(ids, whole=whole), separators=(',', ':')),
-            '--model', self.model, '--effort', self.effort, '--mode', 'plan', '--disable-slash-commands', '--sandbox',
+            '--model', self.model, '--effort', self.effort, '--disable-slash-commands', '--sandbox',
             '--print-timeout', str(timeout)+'s', '--settings', json.dumps(SESSION_SETTINGS), '--log-file', os.devnull]
 
     def _run_translation(self, payload, ids, *, timeout=None, whole=False):
@@ -505,11 +666,12 @@ class AGYProvider(TranslationProvider):
             raise OnlineProviderError('WHOLE_COMMAND_LIMIT', 'Schema/argv quá dài cho giới hạn an toàn Windows; không chia batch.')
         self.checkpoint()
         work = self.root / ('request-' + uuid4().hex); work.mkdir()
+        check_automatic_extensions(work)
         self.requests_sent += 1
         self.last_diagnostic = None
         exit_code = None
         try:
-            exit_code, stdout, stderr = self._invoke(argv, payload, work, timeout)
+            exit_code, stdout, stderr = self._invoke(argv, payload, work, timeout + CLI_SHUTDOWN_GRACE, cli_timeout=timeout)
             self.last_protocol = protocol_metadata(stdout, stderr, exit_code)
             self.last_batch = dict(region_count=len(ids), request_number=self.requests_sent,
                 provider=self.engine_name, model=self.model, effort=self.effort, cli_version=self.version)
@@ -540,6 +702,7 @@ class AGYProvider(TranslationProvider):
             code = ('CLI_EXIT_ERROR' if whole and exc.code == 'PROVIDER_UNAVAILABLE'
                     and exit_code is not None and exit_code != 0 else exc.code)
             self.blocked = ProviderSuspended(code, str(exc))
+            self.blocked.agy_timeout_layer = getattr(exc, 'agy_timeout_layer', None)
             self.last_diagnostic = self._diagnostic(getattr(exc, 'agy_diagnostic', None) or transport(code))
             self.blocked.agy_diagnostic = self.last_diagnostic
             self.record_failure(self.blocked, self._error_source(exc), original=exc)
