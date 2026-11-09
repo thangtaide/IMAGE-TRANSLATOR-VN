@@ -1,5 +1,43 @@
 # Hướng dẫn sử dụng Image Translator VN
 
+## Whole Chapter Translation — thử nghiệm Stage3F
+
+1. Khi không có job đang chạy, mở **Whole Chapter Translation (thử nghiệm)…**
+   trên thanh menu. Chế độ này tách khỏi batch và lựa chọn provider của cửa sổ chính.
+2. Chọn thư mục ảnh chương đã có trên đĩa. Không nhập URL ở cửa sổ này; không
+   tải lại ảnh/model. Có thể đọc nguồn có sẵn, nhưng nên bắt đầu bằng ảnh QA.
+3. Muốn dịch, tích **Cho phép dịch Argos phần còn thiếu trong lượt bấm này** rồi
+   bấm **Chạy QA mới**. Nếu không tích, ứng dụng chỉ OCR/lưu manifest và chờ.
+4. Theo dõi OCR → TRANSLATION → RENDER. Một worker xử lý lần lượt từng trang;
+   Argos dịch từng vùng nội bộ, không phải một request dịch AI toàn chương.
+5. Kết quả riêng ở `output/stage3f-<timestamp>-<id>/rendered`. Cùng thư mục QA có
+   `chapter-journal.json`, `chapter-ocr-manifest.json`, bản dịch đã xác nhận,
+   SQLite QA và receipt render. Manifest chứa văn bản OCR cục bộ; không chia sẻ
+   thư mục QA nếu chưa rà quyền riêng tư. Không commit artifacts này vào Git.
+6. **Hủy** dừng tại checkpoint an toàn. Giữ nguyên cả thư mục QA, không xóa
+   journal/cache/receipt để ép chạy lại. Đóng khi worker đã dừng.
+7. Sau khi mở lại ứng dụng, vào cửa sổ thử nghiệm → **Mở journal QA…** → chọn
+   `chapter-journal.json`. Thao tác này chỉ nạp cấu hình. Nếu còn thiếu bản dịch,
+   kiểm tra lại rồi tích cho phép; bấm **Tiếp tục QA**. Không tích thì không dịch
+   thêm; bản dịch đã xác nhận vẫn có thể được dùng để render phần còn thiếu.
+8. Ảnh đã xuất có hash/receipt hợp lệ được bỏ qua. Nguồn, manifest, bản dịch hoặc
+   receipt thay đổi sẽ bị chặn; không ghi đè ảnh thành công để che lỗi.
+
+Giới hạn thử nghiệm: tối đa500trang/10.000vùng/1.000.000ký tự; JSON16MB. Không
+có whole-chapter AGY/Gemini/MyMemory thật, không tự chuyển provider hoặc retry.
+Muốn thử AGY sau này cần adapter/giao thức được nghiệm thu riêng; không đổi
+`mode` hoặc chạy CLI thủ công với dữ liệu production để ép chế độ QA gọi mạng.
+
+QA tổng hợp có thể chạy bằng Python dự án:
+
+```powershell
+.venv\Scripts\python.exe -m qa.validate_whole_chapter --case mock120
+.venv\Scripts\python.exe -m qa.validate_whole_chapter --case offline
+```
+
+Lệnh thứ hai dùng PaddleOCR/Argos đã cài trên3ảnh tổng hợp. Không có model sẽ
+báo blocked, không tự tải. Cả hai lệnh chặn network và tạo thư mục QA mới.
+
 ## Stage3D.2 — luồng chọn và phân tích chương
 
 1. Tab Link truyện: nhập URL, bấm **Phân tích link** hoặc chủ động nhấn Enter.

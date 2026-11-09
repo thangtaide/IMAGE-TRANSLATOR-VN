@@ -43,6 +43,7 @@ class MainWindow(QMainWindow):
         self.resize(min(1100, screen.width()-40), min(760, screen.height()-60))
         self.ui_job_state = 'IDLE'
         self.options = load_options()
+        self.menuBar().addAction('Whole Chapter Translation (thử nghiệm)…', self.show_whole_chapter)
         if not self.options.output:
             self.options.output = str(ROOT / 'output')
         self.worker: ProcessingWorker | None = None
@@ -578,6 +579,16 @@ class MainWindow(QMainWindow):
     def show_review(self) -> None:
         from ui.review_dialog import ReviewDialog
         ReviewDialog(self.review_pages, self).exec()
+
+    def show_whole_chapter(self) -> None:
+        # The experimental dialog never reuses production output/database/settings.
+        if self.worker and self.worker.isRunning():
+            return
+        for panel in (self.image_panel, self.url_panel):
+            if getattr(panel, 'worker', None) is not None and panel.worker.isRunning():
+                return
+        from ui.whole_chapter import WholeChapterDialog
+        WholeChapterDialog(self.options, self).exec()
 
     def show_models(self) -> None:
         ModelManagerDialog(self).exec()

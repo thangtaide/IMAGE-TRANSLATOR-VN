@@ -1,5 +1,84 @@
 # Trạng thái Image Translator VN
 
+## Stage3F — Whole Chapter Translation offline/mock, 09/11/2026
+
+**STAGE_3F_COMPLETED_WITH_WARNINGS**. Thêm coordinator và cửa sổ QA riêng qua
+menu Whole Chapter Translation (thử nghiệm). OCR tuần tự một worker → manifest
+toàn chương có ID/hash/schema → Argos từng vùng hoặc response mock toàn chương
+→ numeric/glossary guard cũ → lưu accepted durable → render/receipt tuần tự.
+Không giữ bitmap cả chương trong RAM. Resume OCR/MT/render qua restart, không
+tự dịch tiếp nếu chưa cho phép; nguồn/manifest/accepted/receipt đổi thì chặn.
+Kiểm tra lại artifact sát publish, không render target bị guard từ chối.
+
+43test mới; full pytest và unittest cuối mỗi bộ **497PASS/10SKIPPED/0FAIL**
+(507ca). Qt/QThread offscreen responsive, batch/provider/cache/resume/native
+guard regression PASS. QA mock120trang/240vùng →120output hợp lệ; OCR Paddle +
+Argos thật3ảnh tổng hợp/6vùng →3output hợp lệ. Không dùng chương production,
+không live AGY/API/MyMemory/Groq/DeepSeek, không request dịch mạng/chi phí,
+không tải ảnh/model, cài dependency hoặc build EXE. Argos không phải một
+request AI toàn chương và chưa cải thiện context/ngữ nghĩa toàn chương.
+
+**24.067/24.067file có sẵn giữ SHA256**, gồm4EXE, model/config/BAT/spec, ảnh/
+output/cache/DB/journal/receipt. Lượt regression đầu tạo60PNG fixture mới dưới
+staging chung online_comics_work; không ghi đè file cũ nhưng chưa cô lập vị trí
+artifact hoàn toàn. Giữ nguyên chúng, có danh sách/hash riêng. Đã tách hằng
+staging mặc định trong sources/service (giá trị app giữ nguyên), harness chuyển
+staging sang QA rồi chạy lại hai runner. Kiểm tra cuối không có file thêm khác
+trong các vùng production đã kiểm kê;60artifact cũ cũng giữ nguyên hash.
+
+Không thay Options/batch recipe/journal schema, TranslationService/numeric
+literal-numbers-v2-signed hoặc provider/default cũ. Whole mode hiện chỉ local
+Argos/mock, chưa nối AGY thật. Git main/HEAD9e20d09, giữ thay đổi Stage3D.3 có
+sẵn, không stage/commit/push. Báo cáo:
+[STAGE3F_WHOLE_CHAPTER_OFFLINE_REPORT.md](docs/STAGE3F_WHOLE_CHAPTER_OFFLINE_REPORT.md).
+Evidence logs/stage3f-20261109T024010Z, preservation-acceptance.json và hai
+runner acceptance. Người dùng tự review trong Fork; không chuyển stage khác.
+
+## Gemini HTTP403 forensic — 08/11/2026
+
+**HTTP_403_CONFIRMED** cho GUI lúc14:39:36UTC: diagnostic job
+e26eec3c…/chapter276880/page1 có RESPONSE_RECEIVED, HTTP403,
+PERMISSION_DENIED, attempt ID riêng. Đây là response mới, không phải hai thông
+báo SAVED_ERROR. Nguyên nhân quyền cụ thể vẫn **ACCESS_DENIED_ROOT_CAUSE_UNPROVEN**:
+message/details/ErrorInfo.metadata không được lưu. Không kết luận phải bật
+billing, đổi key hoặc model; hướng kiểm tra Console chỉ đọc nằm trong
+[báo cáo forensic](docs/STAGE3D3_HTTP403_FORENSIC_REPORT.md).
+
+60 test local/mock PASS, 0FAIL/0SKIP; không chạy lại full regression vì không
+đổi source. 2.500/2.500 file bảo vệ giữ nguyên SHA256, gồm bốn EXE. Lượt này
+không API/live provider, resume, tải ảnh/model hoặc build. Giữ nguyên lịch sử
+smoke Codex KEY_MISSING/0request bên dưới; sự kiện GUI không phải smoke đó.
+Git main/9e20d09; chỉ bổ sung tài liệu, không stage/commit/push.
+
+## Resume Stage3D.3 — 08/11/2026,13:50UTC
+
+Vẫn **STAGE_3D3_BLOCKED_KEY_MISSING**: KEY_PRESENT=false trong QA process hiện
+tại, Free=true/model2.5Flash không đổi. Lệnh nạp biến User trước đó chỉ kiểm tra
+presence=true trong shell con của lệnh ấy, chưa gửi HTTP trước gián đoạn; không
+truyền biến ngược về parent. Resume mới không tìm registry/.env/file/process khác.
+Ngân sách vẫn0/1, không có retry hoặc HTTP response.4local/mock checks PASS;
+không nhận là live smoke. Baseline Git vẫnmain/9e20d09 với3tài liệu đang thay đổi
+từ lần trước; giữ nguyên công việc đó. Snapshot2.498file để đối chiếu, không sửa
+source, DB/journal/output/model hoặc EXE. Xem mục Resume trong báo cáo Stage3D.3.
+
+## Stage3D.3 — live smoke bị chặn trước HTTP, 08/11/2026
+
+**STAGE_3D3_BLOCKED**, reason **STAGE_3D3_BLOCKED_KEY_MISSING**. Người dùng cho
+phép tối đa1generateContent2.5Flash với3câu tổng hợp, nhưng QA process hiện không
+có GEMINI_API_KEY. Config Free=true/model đúng; không tìm key trong file hoặc
+kho bí mật, không đổi key/billing/model.0request/0retry; ngân sách1lượt chưa dùng.
+
+Baseline main/HEAD9e20d09, repo sạch.4test local/mock preflight PASS/0FAIL/0SKIP;
+không gọi đó là live smoke. HTTP/schema/ID/numeric/translation/Google403 đều
+NOT_TESTED. Full pytest/unittest không chạy lại vì không sửa production source;
+454/10 mỗi runner ở Stage3D.2 vẫn là baseline lịch sử. Không tạo harness/live
+job/resume/download/AGY/MyMemory/build hoặc cài dependency.
+
+Snapshot2.498/2.498file production/resource giữ nguyên SHA256; chỉ thêm báo cáo và
+troubleshooting. Cần khởi chạy Codex từ môi trường đã có biến key rồi tiếp tục
+preflight trước khi dùng lượt request còn nguyên; không dán key vào hội thoại.
+Xem docs/STAGE3D3_GEMINI_API_LIVE_SMOKE_REPORT.md và logs/stage3d3-20261108T125549Z.
+
 ## Stage3D.2 — access diagnostics và luồng chương, 08/11/2026
 
 **STAGE_3D2_WITH_WARNINGS**. Baseline main/HEAD2226723, repo sạch. Lỗi mới

@@ -1,5 +1,69 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Stage3F — Whole Chapter Translation offline
+
+- `awaiting_translation`: OCR/manifest đã có; chưa được cho phép dịch phần còn
+  thiếu trong lượt này. Đây không phải quota. Kiểm tra rồi tích cho phép Argos
+  và bấm Tiếp tục QA; không tự chuyển provider.
+- `MISSING_MODEL`: thiếu model Argos cục bộ. Job không tải model hoặc fallback
+  Online. Có thể tiếp tục kiểm thử cấu trúc bằng mock trong QA.
+- `WHOLE_RESPONSE_IDS*`, `WHOLE_JSON_INVALID`, `WHOLE_RESPONSE_SCHEMA`: mock
+  response sai/thiếu/trùng/lạ ID, target rỗng hoặc JSON bị cắt. Không render khi
+  cả chương chưa đủ bản dịch đã qua guard; không tự retry.
+- `NUMERIC_MISMATCH`: numeric guard hiện có từ chối. Không tự sửa số hoặc nới
+  guard để xuất. Các vùng đã xác nhận trong QA vẫn được giữ để xem lại.
+- `WHOLE_MANIFEST_CHANGED`, `WHOLE_ARTIFACT_CHANGED`, `WHOLE_SOURCE_CHANGED`,
+  `WHOLE_RECIPE_OR_SOURCE_CHANGED`, `WHOLE_OCR_RECEIPT_CHANGED`: dữ liệu/hash/
+  recipe không khớp. Giữ nguyên QA artifacts, nguồn và output; không sửa hash
+  bằng tay để ép resume. Dùng lượt QA mới nếu chủ động thay nguồn/cấu hình.
+- `WHOLE_TRANSLATION_RECEIPT_CHANGED`: bản dịch đã xác nhận khác receipt. Không
+  dùng bản đã thay đổi để render, không ghi đè ảnh đã hoàn thành.
+- `WHOLE_JOB_ACTIVE`: đã có whole job trong ứng dụng hoặc workspace đang được
+  tiến trình khác khóa. Chờ job dừng; không xóa lock file để tranh quyền ghi.
+- `WHOLE_QA_WORKSPACE_REQUIRED`, `WHOLE_QA_SYMLINK_FORBIDDEN`: đường dẫn không
+  thuộc `output/stage3f-…` hoặc có symlink. Không dùng cache/output production
+  làm workspace. Giữ các artifact liên quan để điều tra.
+- `RESUME_RECEIPT_CHANGED`/`RESUME_PUBLICATION_CHANGED` trong render: output cũ
+  không khớp receipt. Pipeline giữ file cũ; không xóa DB/journal để ép ghi đè.
+
+Chi tiết kiến trúc, kiểm thử và giới hạn AGY:
+[STAGE3F_WHOLE_CHAPTER_OFFLINE_REPORT.md](STAGE3F_WHOLE_CHAPTER_OFFLINE_REPORT.md).
+
+## Gemini API — HTTP403 đã xác minh ngày08/11/2026
+
+Diagnostic lúc14:39:36UTC của chapter276880 xác nhận RESPONSE_RECEIVED/403 với
+reason PERMISSION_DENIED. Đây là lỗi response của translation provider;
+SAVED_ERROR chỉ hiển thị trạng thái đã lưu, không chứng minh thêm request.
+Reason chung chưa xác định API disabled, restriction của key, quyền project
+hay model: message/details không được lưu. Không bật billing, thay key/model
+hoặc resume production chỉ dựa vào mã này.
+
+Đối chiếu project ID/number trong AI Studio và Cloud Console; chỉ đọc trạng
+thái Generative Language API và API/application restrictions của key hiện hữu,
+không chia sẻ key. Xem các bước và giới hạn bằng chứng trong
+[STAGE3D3_HTTP403_FORENSIC_REPORT.md](STAGE3D3_HTTP403_FORENSIC_REPORT.md).
+Cuộc điều tra không gọi API; kết quả này không thay thế smoke tổng hợp đang
+bị chặn vì environment QA thiếu key trong báo cáo lịch sử.
+
+## Stage3D.3 — GUI có key nhưng QA/Codex báo API_KEY_MISSING
+
+Biến môi trường được kế thừa theo tiến trình. Key xuất hiện trong GUI không
+chứng minh tiến trình QA của phiên Codex hiện tại cũng thấy biến đó. Lượt smoke
+Stage3D.3 đã dừng trước HTTP vì key_present=false trong chính interpreter QA;
+không phải lỗi Google403, key bị từ chối hoặc model không khả dụng.
+
+Kiểm tra cách cấu hình GEMINI_API_KEY bằng cơ chế môi trường Windows phù hợp,
+mở phiên terminal/ứng dụng cha mới rồi khởi chạy lại Codex. Không dán key vào
+chat, source, config Git, log hoặc báo cáo. Không cần gửi key/prefix/hash để
+Codex so sánh. Codex không tự tìm key trong file nhạy cảm, registry hoặc kho
+credential để vượt bước này.
+
+Sau khi khởi chạy đúng môi trường, chỉ kiểm tra presence/preflight cục bộ trước.
+Ngân sách1request đã duyệt trong Stage3D.3 **chưa được sử dụng**; không resume
+production để thử key. Khi có thể chạy smoke, phải hoàn tất guard một request,
+không retry, không fallback và chỉ gửi3câu tổng hợp đã duyệt. Nếu chưa có key,
+tiếp tục dừng trước mạng; không thay model/billing để thử vận may.
+
 ## Stage3D.2 — ACCESS_DENIED và bằng chứng request
 
 Tại runtime chương276880, có diagnostic ACCESS_DENIED mới lúc18:50:21 ngày

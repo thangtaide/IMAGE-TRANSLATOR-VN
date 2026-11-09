@@ -8,6 +8,9 @@ from uuid import uuid4
 
 from core.ocr import PaddleOCREngine
 from core.paths import CACHE, ROOT
+
+# Separate staging location from ROOT's safety checks; QA may redirect this constant.
+PIPELINE_STAGING_ROOT = ROOT / 'output' / 'online_comics_work'
 from core.pipeline import JobControl, ProcessingManager, TranslationService
 from providers.agy import MODE as AGY_MODE
 from providers.gemini_api import MODE as GEMINI_API_MODE
@@ -210,7 +213,7 @@ class LocalComicJob:
                     # A separate receipt database must have a separate staging area.
                     # Otherwise isolated QA/user profiles can see outputs they cannot verify.
                     namespace = digest(str(self.database.resolve()))[:20]
-                    stage = (ROOT / 'output' / 'online_comics_work' / namespace
+                    stage = (PIPELINE_STAGING_ROOT / namespace
                              / self.comic.comic_id / chapter.chapter_id)
                     data = self.options.to_dict()
                     data.update(output=str(stage), skip_success=True, preserve_structure=True)

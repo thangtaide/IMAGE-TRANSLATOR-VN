@@ -260,7 +260,8 @@ class ProcessingManager:
     def __init__(self, options: Options, cache: TranslationCache | None = None,
                  control: JobControl | None = None, emit: Callable[[dict], None] = lambda _: None,
                  ocr=None, service=None, chapter_id: str | None = None, diagnostic_root: Path | None = None,
-                 override_registry: OCRRegionOverrides | None = None, resume_id: str | None = None):
+                 override_registry: OCRRegionOverrides | None = None, resume_id: str | None = None,
+                 prepared_chapter=None):
         self.options = options
         self.cache = cache or TranslationCache()
         self.owns_cache = cache is None
@@ -283,6 +284,7 @@ class ProcessingManager:
         self.resume_store = ResumeStore(getattr(self.cache, 'path', None))
         self.resume_id = resume_id
         self.journal = None
+        self.prepared_chapter = prepared_chapter
 
     def cache_source_hash(self, path):
         value = file_digest(path)
@@ -449,6 +451,8 @@ class ProcessingManager:
                 ocr_identity = 'unavailable:' + type(exc).__name__
             try:
                 service_identity = self.service.identity()
+                if self.prepared_chapter is not None:
+                    service_identity = digest([service_identity, self.prepared_chapter.identity])
             except Exception as exc:
                 if preflight_error is None:
                     preflight_error, preflight_stage = exc, 'TRANSLATION'
@@ -480,7 +484,7 @@ class ProcessingManager:
             self.diagnostics = DiagnosticLog(self.job_id, self.options.diagnostic_text, self.diagnostic_root)
             self.cache.job(self.job_id, self.options, 'running')
             batching = None
-            if self.options.mode in (AGY_MODE, GEMINI_API_MODE) and files and preflight_error is None:
+            if self.prepared_chapter is None and self.options.mode in (AGY_MODE, GEMINI_API_MODE) and files and preflight_error is None:
                 from core.multipage import MultiPageAGY
                 batching = MultiPageAGY(self, files, relevant, ocr_identity, service_identity)
             for index, path in enumerate(files):
@@ -538,7 +542,9 @@ class ProcessingManager:
                     context = digest([r.text for r in regions])
                     translations = []
                     stage = 'TRANSLATION'
-                    if self.options.mode in (AGY_MODE, GEMINI_API_MODE) and regions:
+                    if self.prepared_chapter is not None:
+                        translations = self.prepared_chapter.for_page(path, regions)
+                    elif self.options.mode in (AGY_MODE, GEMINI_API_MODE) and regions:
                         region_index, current_region = 0, regions[0]
                         try:
                             translations = batching.for_page(path, regions)
@@ -546,7 +552,7 @@ class ProcessingManager:
                             region_index = getattr(exc, 'region_index', 0)
                             current_region = regions[region_index]
                             raise
-                    for n, region in enumerate([] if self.options.mode in (AGY_MODE, GEMINI_API_MODE) else regions):
+                    for n, region in enumerate([] if self.prepared_chapter is not None or self.options.mode in (AGY_MODE, GEMINI_API_MODE) else regions):
                         region_index, current_region = n, region
                         self.control.checkpoint()
                         translations.append(self.service.translate(region.text, region.language, context))
@@ -574,6 +580,8 @@ class ProcessingManager:
                         'no_text_to_translate': not regions, 'numeric_validator_version': VALIDATOR_VERSION,
                         'translations': translations, 'warnings': warnings}
                     def before_publish(temp):
+                        if self.prepared_chapter is not None:
+                            self.prepared_chapter.for_page(path, regions)  # Recheck the chapter transaction before publish.
                         self.cache.put('metadata', fingerprint, metadata)
                         self.resume_store.page(self.journal, path, state='publishing', output=str(destination),
                             output_hash=file_digest(temp), job_id=self.job_id, fingerprint=fingerprint)

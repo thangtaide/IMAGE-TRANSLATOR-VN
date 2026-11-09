@@ -1,5 +1,16 @@
 # IMAGE TRANSLATOR VN
 
+## Stage3F — Whole Chapter Translation thử nghiệm, chỉ offline
+
+Mở **Whole Chapter Translation (thử nghiệm)…** trên thanh menu của bản source.
+Chọn thư mục ảnh chương đã có; OCR toàn chương và lưu manifest trước khi dịch.
+Tích cho phép Argos rồi chủ động chạy. Output/cache/journal riêng trong
+`output/stage3f-…`; không dùng database hoặc output của chương production.
+Mở journal QA không tự dịch/resume. Batch mode và bốn provider hiện có giữ nguyên.
+Whole-chapter hiện chỉ nối Argos offline; phản hồi AGY toàn chương mới được
+kiểm tra bằng mock, không có lệnh gửi AGY/API thật ở chế độ này.
+Xem [hướng dẫn](docs/USER_GUIDE.md) và [báo cáo Stage3F](docs/STAGE3F_WHOLE_CHAPTER_OFFLINE_REPORT.md).
+
 ## Stage3D.2 — phân tích chương trực tiếp và diagnostic API
 
 Tab Link truyện theo luồng: **URL → Phân tích link → chọn chương → Phân tích
