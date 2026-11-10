@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import math
+import re
 import tempfile
 from pathlib import Path
 
@@ -256,15 +258,36 @@ class TextRenderer:
                     fit = font, wrapped, spacing, bbox
                     break
             if fit is None:
-                raise TextLayoutError(f'LAYOUT_UNFIT: bản dịch nhóm {indices} không vừa ({width}×{height}px) ở cỡ tối thiểu {self.options.font_min}; không cắt nội dung hoặc vẽ chồng.')
+                # A small unchanged Latin identifier can be wider than its tight
+                # OCR box at the configured minimum. Add only local horizontal
+                # room; never expand dialogue, merge distant boxes or shrink type.
+                literal = regions[indices[0]].text.strip() if len(indices) == 1 else ''
+                if (len(indices) == 1 and height <= 24 and text == literal and
+                        re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,127}', literal)):
+                    font = ImageFont.truetype(str(self.font_path), self.options.font_min)
+                    spacing = max(0, min(self.options.line_spacing, font.size // 4))
+                    bbox = draw.multiline_textbbox((0,0), text, font=font, spacing=spacing,
+                        align=self.options.alignment, stroke_width=self.options.stroke)
+                    required = max(math.ceil(bbox[2]-bbox[0]), math.ceil(draw.textlength(text,font=font)+2*self.options.stroke))
+                    padding = max(0,math.ceil((required-width)/2))
+                    candidate = [max(0,x0-padding),y0,min(image_size[0],x1+padding),y1]
+                    if (padding <= min(16,math.ceil(height*.75)) and required <= candidate[2]-candidate[0]
+                            and bbox[3]-bbox[1] <= height and not any(
+                                other is not group and self._intersects(candidate,other['box']) for other in groups)):
+                        x0,y0,x1,y1 = candidate; width,height = x1-x0,y1-y0
+                        fit = font,text,spacing,bbox
+                if fit is None:
+                    raise TextLayoutError(f'LAYOUT_UNFIT: bản dịch nhóm {indices} không vừa ({width}×{height}px) ở cỡ tối thiểu {self.options.font_min}; không cắt nội dung hoặc vẽ chồng.')
             font, wrapped, spacing, bbox = fit
             x = x0 - bbox[0] + ((width-(bbox[2]-bbox[0]))/2 if self.options.alignment == 'center' else 0)
             y = y0 - bbox[1] + (height-(bbox[3]-bbox[1]))/2
             if ''.join(wrapped.split()) != ''.join(text.split()):
                 raise TextLayoutError('LAYOUT_UNFIT: word wrap làm thay đổi nội dung')
             plans.append(dict(region_indices=indices, duplicate_indices=[i for i,v in duplicates.items() if v in indices],
-                box=group['box'],paint_box=[x+bbox[0],y+bbox[1],x+bbox[2],y+bbox[3]],
+                box=[x0,y0,x1,y1],paint_box=[x+bbox[0],y+bbox[1],x+bbox[2],y+bbox[3]],
                 text=text,wrapped=wrapped,font_size=font.size,spacing=spacing,origin=[x,y]))
+            if [x0,y0,x1,y1] != group['box']:
+                plans[-1].update(source_box=group['box'],layout_strategy='verbatim-ascii-local-padding')
         for i,plan in enumerate(plans):
             if any(self._intersects(plan['paint_box'],p['paint_box']) for p in plans[i+1:]):
                 raise TextLayoutError('LAYOUT_UNFIT: vùng đặt chữ giao nhau sau bố trí')

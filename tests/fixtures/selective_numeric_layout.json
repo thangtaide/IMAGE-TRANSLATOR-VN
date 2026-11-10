@@ -1,0 +1,30 @@
+{
+  "fixture_kind": "SANITIZED_MANUAL_REPRO_FROM_0014_0029_0085_NOT_RAW_RESPONSE",
+  "numeric": [
+    {"source": "属性下降百分之20", "target": "Chỉ số giảm 20%", "accepted": true},
+    {"source": "原来的百分之70", "target": "Còn 70% ban đầu", "accepted": true},
+    {"source": "百分之 20", "target": "20%", "accepted": true},
+    {"source": "百分之20", "target": "70%", "accepted": false},
+    {"source": "百分之20", "target": "20", "accepted": false},
+    {"source": "20", "target": "20%", "accepted": false},
+    {"source": "百分之20和第14项", "target": "20% và mục 14", "accepted": true},
+    {"source": "百分之20和第14项", "target": "14% và mục 20", "accepted": false},
+    {"source": "百分之-20", "target": "-20%", "accepted": true},
+    {"source": "百分之-20", "target": "20%", "accepted": false},
+    {"source": "百分之−20", "target": "-20%", "accepted": false},
+    {"source": "数值1,500", "target": "1.500", "accepted": false},
+    {"source": "百分之0.2", "target": "0.2%", "accepted": true},
+    {"source": "百分之0.2", "target": "20%", "accepted": false},
+    {"source": "数值3333和+15", "target": "3333 và +15", "accepted": true},
+    {"source": "数值3333和+15", "target": "333 và +15", "accepted": false}
+  ],
+  "layout_0085": {
+    "source": "ETDKTENOAOSTEE",
+    "target": "ETDKTENOAOSTEE",
+    "box": [407, 457, 469, 468],
+    "image_size": [1280, 720],
+    "font_min": 8,
+    "stroke": 1,
+    "line_spacing": 3
+  }
+}

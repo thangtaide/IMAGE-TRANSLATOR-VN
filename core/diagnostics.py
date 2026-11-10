@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from core.paths import ROOT
 
-VALIDATOR_VERSION = 'literal-numbers-v2-signed'
+VALIDATOR_VERSION = 'literal-numbers-v3-signed-explicit-percent'
 TRANSLATED_SUCCESS = 'TRANSLATED_SUCCESS'
 PARTIAL_TRANSLATION = 'PARTIAL_TRANSLATION'
 FALLBACK_ORIGINAL = 'FALLBACK_ORIGINAL'

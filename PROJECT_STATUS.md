@@ -1,5 +1,27 @@
 # Trạng thái Image Translator VN
 
+## Khôi phục chọn lọc 0014 / 0029 / 0085 — 11/11/2026
+
+**CHƯA ĐẠT chất lượng toàn bộ ba ảnh.** Job `832ba2b6…`: hai NUMERIC_MISMATCH
+là false positive `百分之20/70` so với `20%/70%`; đã sửa có namespace cache
+riêng, không nới lỏng chữ số/dấu/thứ tự. 0085 LAYOUT_UNFIT do nhãn Latin
+62×11 px; fallback mở ngang an toàn 7 px mỗi bên, giữ font_min 8 và toàn target.
+Parser AGY cũ ACCEPT 23/23; giải mã đúng capture được cấp quyền trong RAM,
+render thử đúng ba ảnh, **không gọi AGY (0/6), không ghi DB production**.
+
+0085 kiểm tra ảnh thật ĐẠT. 0014 còn chữ ngoài OCR; 0029 mask còn sót chữ
+trắng/hồng gây nhiễu sau inpaint. Giữ nguyên thuật toán OCR/mask theo giới hạn
+nhiệm vụ, không báo ba ảnh hoàn tất chỉ vì numeric/layout PASS.
+
+Regression chọn lọc 182 test khác nhau PASS sau sửa PATH tiến trình cho Node
+(lần tổng 181 PASS/1 FAIL môi trường, chạy lại test đó 1 PASS); JS ToonCN 3 PASS.
+137 layout ảnh khác giống baseline; 294 file dữ liệu và 12 EXE cũ nguyên hash.
+Không chạy full suite/live AGY, không build EXE. Bản EXE cũ chưa chứa sửa đổi.
+
+[Báo cáo/ảnh trước sau/giới hạn](docs/SELECTIVE_RECOVERY_0014_0029_0085.md).
+Evidence `output/selective-recovery-20261110T165759Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
 ## GUI, cache và dịch lại từ đầu — 10/11/2026, 15:25 UTC
 
 **ĐẠT nhiệm vụ trên máy hiện tại.** Fresh tạo UUID/DB/journal/output riêng;

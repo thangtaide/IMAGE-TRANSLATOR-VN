@@ -30,6 +30,21 @@ LOGGER = logging.getLogger(__name__)
 NUMBER_PATTERN = r'[+\-−－＋]?\d+(?:[.,:/%+−-]\d+)*%?'
 
 
+def numeric_tokens(text: str) -> list[str]:
+    """Preserve literal digits/signs; Chinese 百分之 explicitly supplies percent.
+
+    Only this written unit is canonicalized. Bare numbers, separators, ranges,
+    Unicode signs and ordering retain the existing strict comparison.
+    """
+    tokens = []
+    for match in re.finditer(NUMBER_PATTERN, text):
+        token = match.group()
+        if not token.endswith('%') and re.search(r'百分之\s*$', text[:match.start()]):
+            token += '%'
+        tokens.append(token)
+    return tokens
+
+
 def has_signed_number(text: str) -> bool:
     return any(token[0] in '+-−－＋' for token in re.findall(NUMBER_PATTERN, text))
 
@@ -152,13 +167,16 @@ class TranslationService:
         self.last_attempt = {'provider': provider_name if isinstance(provider_name, str) else type(provider).__name__,
                              'model_identity': provider.identity, 'mode': self.options.mode if self.options.mode in (AGY_MODE, GEMINI_API_MODE) else 'Online' if provider.online else 'Offline',
                              'ocr_source_text': text, 'raw_translated_target': None}
-        key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, 'glossary-v3-literal-numbers'])
+        explicit_percent = numeric_tokens(text) != re.findall(NUMBER_PATTERN, text)
+        revision = 'glossary-v5-explicit-percent' if explicit_percent else 'glossary-v3-literal-numbers'
+        key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, revision])
         cached = self.cache.get('translation', key)
         # Keep unsigned legacy cache/118 existing receipts intact. Signed source or
         # legacy signed target must use freshly validated, versioned cache entries.
         signed_namespace = has_signed_number(text) or (cached is not None and has_signed_number(cached))
         if signed_namespace:
-            key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, 'glossary-v4-signed-numbers'])
+            revision = 'glossary-v5-explicit-percent-signed' if explicit_percent else 'glossary-v4-signed-numbers'
+            key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, revision])
             cached = self.cache.get('translation', key)
         if cached is not None:
             return cached
@@ -192,7 +210,7 @@ class TranslationService:
                                  target_numeric_tokens=re.findall(number_pattern, translated or ''))
         if not translated or not translated.strip():
             raise ProviderError('Provider trả bản dịch rỗng')
-        if re.findall(number_pattern, translated) != expected_numbers:
+        if numeric_tokens(translated) != numeric_tokens(protected):
             raise NumericMismatchError('Bản dịch không qua kiểm tra số; giữ ảnh gốc để xem lại.')
         for marker, replacement in substitutions:
             pattern = re.compile(re.escape(marker), flags=re.IGNORECASE)

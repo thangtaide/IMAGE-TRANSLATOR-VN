@@ -342,9 +342,9 @@ print('RESULT '+json.dumps(dict(state=r['state'],completed=r.get('completed'),oc
         self.assertEqual(self.job(control=control).run(allow_translation=True)['state'], 'cancelled')
         self.assertFalse((self.work/'validated-translations.json').exists())
 
-    def test_guard_version_and_pattern_unchanged(self):
+    def test_guard_version_and_literal_signed_pattern(self):
         from core.diagnostics import VALIDATOR_VERSION
-        self.assertEqual(VALIDATOR_VERSION, 'literal-numbers-v2-signed')
+        self.assertEqual(VALIDATOR_VERSION, 'literal-numbers-v3-signed-explicit-percent')
         self.assertIn('[+\\-', NUMBER_PATTERN)
 
 
