@@ -1,0 +1,15 @@
+{
+  "classification": "SANITIZED CAPTURE-DERIVED EXCERPT; originals tested separately",
+  "original_sha256": {
+    "topic-6677.dom.html": "e8398c93d97cdf6c1c42d5ae8b93f6d4c44188002d93f91b14c0551dfefdb1ea",
+    "chapter-281106.dom.html": "09982e856c071cf76fae8045346272aa2099d7c8ea5dacba67fdfdf1e21aae05"
+  },
+  "operations": [
+    "Keep topic title-item DOM and actual ID/title/access records",
+    "Reader retains first two and last img-box, navigation and matched manifest only",
+    "Strip comments, user/account data, analytics, Vue attributes",
+    "Replace sign/t query values with zeros",
+    "Reserialize whitelisted public state in data-only wrapper"
+  ],
+  "reader_manifest_items": 3
+}

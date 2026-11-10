@@ -1,0 +1,15 @@
+{
+  "classification": "HTTP-DERIVED SANITIZED PUBLIC STATE + HAND-WRITTEN DOM SKELETON; not original HTTP HTML",
+  "observed_responses": {
+    "topic": "76a27efea28d31e5f6be4d9431f6ce7226976e88ac86683053d633f168d51738",
+    "chapter": "9c3cccdeadeeed803d544d887dd6a43e19d37a9a2abb7eaeea10ff507a7f66cf"
+  },
+  "operations": [
+    "Keep only public topic/comic IDs, titles, explicit read flags, counts and image manifest",
+    "Remove users/comments/account/analytics",
+    "Replace signature values with zeros",
+    "Reserialize state using the tested literal wrapper",
+    "Topic DOM skeleton contains no chapter item; reader skeleton contains only first two boxes as observed in SSR"
+  ],
+  "image_bytes_downloaded": 0
+}

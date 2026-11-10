@@ -1,0 +1,240 @@
+{
+  "fixture_kind": "MANUAL_CONTRACT_FIXTURES_NOT_CAPTURED_AGY",
+  "provenance": "Existing parser/result envelope and deliberately synthetic branches; no claim of observed AGY wire schema.",
+  "cases": [
+    {
+      "id": "valid",
+      "verdict": "ACCEPT",
+      "classification": "VALID_TRANSLATION_RESPONSE"
+    },
+    {
+      "id": "actual_request",
+      "prefix": [
+        {
+          "event": "tool_call",
+          "tool_name": "fixture_tool",
+          "arguments": {
+            "path": "PRIVATE_FIXTURE_PATH"
+          }
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "ACTUAL_TOOL_REQUEST"
+    },
+    {
+      "id": "type_metadata",
+      "prefix": [
+        {
+          "event": "init",
+          "metadata": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "tool_name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "TOOL_METADATA_ONLY"
+    },
+    {
+      "id": "unverified_declaration",
+      "prefix": [
+        {
+          "event": "init",
+          "tool_declarations": [
+            {
+              "tool_name": "fixture_only",
+              "description": "Declaration, no invocation in this manual example"
+            }
+          ]
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "UNKNOWN_PROTOCOL_SHAPE"
+    },
+    {
+      "id": "mixed_text_request",
+      "prefix": [
+        {
+          "event": "tool_use",
+          "tool_name": "fixture_only",
+          "text": "PRIVATE_TEXT",
+          "arguments": {}
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "ACTUAL_TOOL_REQUEST"
+    },
+    {
+      "id": "permission_request",
+      "prefix": [
+        {
+          "event": "permission_request",
+          "message": "PRIVATE_PERMISSION_DETAIL",
+          "tool_name": "fixture_only",
+          "arguments": {}
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "ACTUAL_TOOL_REQUEST"
+    },
+    {
+      "id": "malformed_json",
+      "raw_prefix": "not JSON {\n",
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "unknown_only",
+      "prefix": [
+        {
+          "event": "future_protocol",
+          "metadata": {}
+        }
+      ],
+      "omit_result": true,
+      "verdict": "REJECT",
+      "classification": "UNKNOWN_PROTOCOL_SHAPE"
+    },
+    {
+      "id": "unknown_auxiliary_legacy_accepts",
+      "prefix": [
+        {
+          "event": "future_protocol",
+          "metadata": {}
+        }
+      ],
+      "verdict": "ACCEPT",
+      "classification": "VALID_TRANSLATION_RESPONSE"
+    },
+    {
+      "id": "missing_response",
+      "override": {
+        "response": null
+      },
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "wrong_text_type",
+      "rows": [
+        {
+          "id": "r0",
+          "text": 123
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "nested_response_object",
+      "override": {
+        "response": {
+          "translations": []
+        }
+      },
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "duplicate_result",
+      "duplicate_result": true,
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "nested_metadata",
+      "prefix": [
+        {
+          "event": "init",
+          "metadata": {
+            "unverified_container": {
+              "tool_name": "fixture_only"
+            }
+          }
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "UNKNOWN_PROTOCOL_SHAPE"
+    },
+    {
+      "id": "literal_tool_text",
+      "rows": [
+        {
+          "id": "r0",
+          "text": "tool_call tool_name shell web MCP 15"
+        }
+      ],
+      "verdict": "ACCEPT",
+      "classification": "VALID_TRANSLATION_RESPONSE"
+    },
+    {
+      "id": "exit_failure",
+      "exit_code": 7,
+      "verdict": "REJECT",
+      "classification": "UNKNOWN_PROTOCOL_SHAPE"
+    },
+    {
+      "id": "missing_id",
+      "rows": [
+        {
+          "id": "other",
+          "text": "Bản dịch 15"
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "duplicate_id",
+      "rows": [
+        {
+          "id": "r0",
+          "text": "A"
+        },
+        {
+          "id": "r0",
+          "text": "B"
+        }
+      ],
+      "expected_ids": [
+        "r0",
+        "r1"
+      ],
+      "verdict": "REJECT",
+      "classification": "MALFORMED_RESPONSE"
+    },
+    {
+      "id": "tool_result_without_marker_legacy_accepts",
+      "prefix": [
+        {
+          "event": "tool_result",
+          "content": "PRIVATE_RESULT"
+        }
+      ],
+      "verdict": "ACCEPT",
+      "classification": "VALID_TRANSLATION_RESPONSE"
+    },
+    {
+      "id": "function_call_ambiguous",
+      "prefix": [
+        {
+          "event": "assistant",
+          "message": {
+            "function_call": {
+              "name": "fixture_only",
+              "arguments": "PRIVATE"
+            }
+          }
+        }
+      ],
+      "verdict": "REJECT",
+      "classification": "UNKNOWN_PROTOCOL_SHAPE"
+    }
+  ]
+}

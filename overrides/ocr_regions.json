@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "overrides": [
+    {
+      "id": "verified-curtain-decoration-d1df7f273a1e4094",
+      "version": 1,
+      "enabled": true,
+      "action": "SKIP_FALSE_POSITIVE_REGION",
+      "image_sha256": "d1df7f273a1e40941c3018d866d684536e57affa430765bbb6f02a00ea915f9c",
+      "text": "3子",
+      "polygon": [
+        [
+          577,
+          220
+        ],
+        [
+          725,
+          220
+        ],
+        [
+          725,
+          480
+        ],
+        [
+          577,
+          480
+        ]
+      ],
+      "source_relative_path": "cache/online_comics/kuaikanmanhua/6677/chapter_274872/0074.jpg",
+      "reason": "Đối chiếu ảnh nguồn: hoa văn rèm, không phải văn bản.",
+      "evidence": "docs/NUMERIC_INTEGRITY_INVESTIGATION.md; ảnh nguồn đã đối chiếu polygon, xác nhận trong nhiệm vụ Stage 2."
+    }
+  ]
+}
