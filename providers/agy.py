@@ -385,8 +385,13 @@ def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: in
                 raise ProviderSuspended('QUOTA_EXCEEDED', 'AGY báo hết hạn mức tài khoản; đã tạm dừng, không dùng credits/API khác.')
             if code in ('RATE_LIMITED', 429) or 'RATE_LIMIT' in text:
                 raise ProviderSuspended('RATE_LIMITED', 'AGY báo giới hạn tốc độ; thời điểm khôi phục chưa xác định.')
-            if 'AUTHENTICATION REQUIRED' in text or code in ('AUTH_REQUIRED', 'UNAUTHENTICATED'):
-                raise ProviderSuspended('AUTH_REQUIRED', 'AGY cần phiên đăng nhập hợp lệ; không tự đăng nhập hoặc chuyển API key.')
+            if (any(marker in text for marker in ('AUTHENTICATION REQUIRED',
+                    'AUTHENTICATION FAILED', 'AUTHENTICATION TIMED OUT'))
+                    or code in ('AUTH_REQUIRED', 'UNAUTHENTICATED')):
+                raise ProviderSuspended('AUTH_REQUIRED',
+                    'AGY chưa xác thực hoặc đăng nhập hết thời gian chờ. Mở PowerShell, chạy agy '
+                    'và hoàn tất đăng nhập bằng tài khoản của bạn; sau đó chủ động Tiếp tục. '
+                    'Ứng dụng không tự đăng nhập, retry hoặc chuyển API key.')
             if whole and code in ('PERMISSION_DENIED', 'ACCESS_DENIED', 403):
                 raise ProviderSuspended('ACCESS_DENIED', 'AGY từ chối quyền truy cập; không tự thử lại.')
             if whole and code in ('MODEL_UNAVAILABLE', 'MODEL_NOT_FOUND', 'NOT_FOUND', 404):

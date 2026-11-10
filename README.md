@@ -1,5 +1,18 @@
 # IMAGE TRANSLATOR VN
 
+## Máy hiện tại: chạy source, xuất ra thư mục ngoài và build EXE
+
+Project hiện ở `D:\WebLocal\IMAGE-TRANSLATOR-VN-main`; Python 3.10.9,
+`.venv`, dependencies và 5 model Trung giản thể→Việt đã cài. Mở
+`run_source.bat`. Đầu ra batch có thể ở thư mục ngoài project, ví dụ
+`D:\MangaTranslated` hoặc ổ đĩa khác; vẫn cần tách khỏi nguồn và vùng ứng dụng.
+Chưa chạy test/GUI/E2E theo yêu cầu người dùng; đã build onedir thành công tại
+`dist\ImageTranslatorVN\ImageTranslatorVN.exe`, chưa mở binary để kiểm chứng.
+Xem [hướng dẫn xuất và build](docs/EXPORT_AND_BUILD.md) để biết lệnh build,
+đường dẫn EXE. `build.bat` mặc định đóng gói không chạy test; dùng
+`build.bat --validated` nếu cần gate GUI/E2E và pytest. Workspace Whole Chapter thử nghiệm vẫn được
+quản lý riêng trong `output/stage3g-*`, không đổi bởi bản sửa batch này.
+
 ## ToonCN qua Chrome đã cấp quyền
 
 Trong Link truyện online, bật **ToonCN**, dán URL truyện/chương rồi phân tích
@@ -229,7 +242,7 @@ Lượt tiếp tục đã xác định proxy `127.0.0.1:9` và cờ tắt mạng
 1. Nhấp đúp `install.bat` để tạo `.venv`, cài bộ phiên bản trong `requirements.txt` và tải font Noto Sans. Cần Python 3.10 hoặc 3.11 **64 bit** đã có Python Launcher. Máy hiện tại có Python 3.10.9. Script báo lỗi và lưu log nếu cài không thành công; không bỏ qua hạn chế mạng/proxy của máy.
 2. Nhấp đúp `run.bat`. Sau khi cài thành công, người sử dụng không cần terminal. Khi đã có bản build, script ưu tiên EXE trong `dist\ImageTranslatorVN`.
 3. Mở **Quản lý mô hình AI**. Chọn từng model cần thiết và bấm **Tải**, sau đó **Kiểm tra model**. Đây là thao tác riêng có truy cập Internet, không gửi ảnh hoặc văn bản OCR. Kiểm tra model hiện xác minh cấu trúc và SHA-256; kiểm thử suy luận thật là bước riêng.
-4. Chọn thư mục ảnh nguồn, thư mục xuất trong một thư mục con của `D:\TransTool` (mặc định `output`), ngôn ngữ OCR và chế độ dịch.
+4. Chọn thư mục ảnh nguồn, thư mục xuất riêng (có thể ngoài project hoặc khác ổ đĩa; mặc định `output`), ngôn ngữ OCR và chế độ dịch.
 5. Chọn **Cài đặt** nếu cần đổi font/cỡ chữ/màu/viền/căn lề, thứ tự đọc, inpaint/nền trắng/mask tùy chỉnh, định dạng và chất lượng ảnh, thuật ngữ/tên riêng.
 6. Bấm **Bắt đầu dịch**. Theo dõi tên file, công đoạn, số ảnh đã hoàn thành/lỗi/bỏ qua và tiến trình phát sinh từ worker thật. Nhấp đúp hàng kết quả để xem trước/sau và cảnh báo.
 7. **Tạm dừng**, **Tiếp tục**, **Hủy** có hiệu lực ở checkpoint an toàn. OCR hoặc một yêu cầu mạng đang thực hiện cần kết thúc trước khi dừng. **Thử lại ảnh lỗi / chưa xong** chỉ xử lý danh sách đó. Các kết quả đã hoàn tất được giữ lại.

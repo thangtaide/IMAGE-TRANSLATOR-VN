@@ -136,6 +136,12 @@ class ProviderNotice(QWidget):
                      else 'Chưa bắt đầu gửi OCR để dịch; CLI probe có thể đã chạy. Xem metadata để biết trạng thái tiến trình.')
             facts += ' Công việc tạm dừng; không tạo ảnh Origin mới cho phần pending.'
             remedy = 'Kiểm tra cấu hình AGY an toàn; không bỏ guard hoặc reset journal. Chủ động tiếp tục hoặc tạo lượt mới sau khi xử lý nguyên nhân.'
+        elif code=='AUTH_REQUIRED' and event.get('provider')=='AGY Gemini':
+            title = 'AGY cần đăng nhập'
+            cause = 'AGY CLI chưa có phiên xác thực hợp lệ hoặc đăng nhập đã hết thời gian chờ.'
+            facts = 'Output/cache đã hoàn tất được giữ. Công việc tạm dừng; không tự gửi lại phần pending.'
+            remedy = ('Mở PowerShell, chạy agy và hoàn tất đăng nhập bằng tài khoản của bạn. '
+                      'Sau đó quay lại ứng dụng và chủ động Tiếp tục. Không cần đổi model hoặc API key.')
         elif code=='TIMEOUT' and event.get('provider')=='AGY Gemini':
             title = 'AGY hết thời gian chờ'
             seconds = event.get('agy_timeout')

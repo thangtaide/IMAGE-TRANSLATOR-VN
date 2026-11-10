@@ -1,5 +1,14 @@
 # IMAGE TRANSLATOR VN — hướng dẫn cho AI setup và tiếp tục trên máy mới
 
+> Máy hiện tại, 10/11/2026: người dùng chọn gốc
+> `D:\WebLocal\IMAGE-TRANSLATOR-VN-main` thay `D:\TransTool` và yêu cầu chỉ
+> cài đặt, không test. Python 3.10.9/.venv, dependencies và 5 model tối thiểu
+> đã cài; xem [báo cáo setup](docs/SETUP_20261110.md). Không chạy test trên máy
+> này theo yêu cầu người dùng. Cập nhật build: `build.bat` mặc định đóng gói
+> không cần GUI/E2E, `build.bat --validated` giữ gate và pytest cũ. Xem
+> [hướng dẫn build hiện tại](docs/EXPORT_AND_BUILD.md) và BUILD_REPORT.md;
+> các bước gate bắt buộc bên dưới là quy trình kiểm chứng lịch sử.
+
 Cập nhật: **07/11/2026**. Đây là tài liệu bàn giao mã nguồn đã có, **không phải yêu cầu tạo lại dự án**. Khi người dùng yêu cầu setup theo file này, AI phải trực tiếp kiểm tra môi trường, thực hiện các bước khả thi, chạy xác minh và báo kết quả thật. Không chỉ trả kế hoạch hoặc bắt người dùng sao chép từng file mã nguồn.
 
 ## 1. Đọc trước và xác định đúng trạng thái

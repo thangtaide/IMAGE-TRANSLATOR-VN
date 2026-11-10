@@ -133,9 +133,9 @@ class FilesAndStorageTests(WorkspaceCase):
         self.assertEqual(json.loads(path.read_text(encoding='utf-8')), {'a': 'Việt'})
         self.assertFalse(path.with_suffix('.json.tmp').exists())
 
-    def test_forbid_source_overwrite_and_output_escape(self):
+    def test_forbid_source_overwrite_and_application_directories(self):
         self.image()
-        for target in [self.source, ROOT.parent / 'unsafe-export', ROOT / 'models/unsafe']:
+        for target in [self.source, ROOT, ROOT.parent, ROOT / 'models/unsafe']:
             opts = self.options()
             opts.output = str(target)
             with self.assertRaises(ValueError):

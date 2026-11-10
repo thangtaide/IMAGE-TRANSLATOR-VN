@@ -380,8 +380,8 @@ class ProcessingManager:
             raise FileNotFoundError('Chọn thư mục nguồn tồn tại')
         if self.output == self.source or self.source.is_relative_to(self.output):
             raise ValueError('Thư mục xuất phải tách khỏi ảnh nguồn và không được là thư mục cha của nguồn')
-        if not self.output.is_relative_to(ROOT.resolve()) or self.output == ROOT.resolve():
-            raise ValueError(f'Mọi kết quả phải nằm trong thư mục con của {ROOT}')
+        if self.output == ROOT.resolve() or ROOT.resolve().is_relative_to(self.output):
+            raise ValueError('Chọn thư mục kết quả riêng, không phải thư mục ứng dụng/cha của ứng dụng')
         for reserved in ('models', 'config', 'cache', 'logs', 'ui', 'core', 'providers', 'scripts', 'tests', '.venv', 'assets'):
             if self.output.is_relative_to((ROOT / reserved).resolve()):
                 raise ValueError('Thư mục xuất trùng khu vực mã nguồn/model/cache của ứng dụng')

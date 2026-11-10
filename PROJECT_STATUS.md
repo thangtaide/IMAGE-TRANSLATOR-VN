@@ -1,5 +1,76 @@
 # Trạng thái Image Translator VN
 
+## AGY AUTH_REQUIRED — chẩn đoán attempt b9a0f3df, 10/11/2026
+
+Attempt `b9a0f3df379d4c019e44445fee05aece` exit 1 sau 60,5s, không phải timeout
+300s của batch. Sau khi người dùng cho phép riêng, đọc hai ciphertext bằng
+DPAPI trong RAM: terminal ERROR `authentication failed or timed out`; stderr
+yêu cầu OAuth và báo hết thời gian đăng nhập 60s. Không lưu plaintext/token/URL
+OAuth hoặc gửi raw ra ngoài. CLI hiện tại 1.5.4; chỉ gọi --version/--help.
+
+Sửa providers/agy.py nhận thông báo auth dạng chuỗi thành AUTH_REQUIRED thay
+PROVIDER_UNAVAILABLE; ui/provider_notice.py hướng dẫn đăng nhập AGY thủ công.
+Không đổi model, guard, tài khoản, key hoặc tự retry. Người dùng cần chạy agy
+trong PowerShell và hoàn tất đăng nhập, rồi chủ động Tiếp tục. Chưa chứng minh
+backend nhận OCR hoặc model khả dụng. Không sửa journal/cache/output cũ.
+Chỉ kiểm tra AST, không chạy bộ test/GUI/dịch. Xem
+[báo cáo](docs/AGY_AUTH_REQUIRED_20261110.md) và BUILD_REPORT cho binary mới.
+
+Build bản sửa thành công tại
+`dist/ImageTranslatorVN-20261110T091547241775Z/ImageTranslatorVN-20261110T091547241775Z.exe`.
+Người dùng xác nhận quên đăng nhập và sẽ tự thử lại trong tool. Chưa ghi nhận
+đăng nhập/dịch lại thành công; không tự resume job.
+
+## Build không bắt buộc test — 10/11/2026
+
+Theo yêu cầu chỉ cài/build không test, `build.bat` mặc định chạy pip check và
+PyInstaller, không yêu cầu evidence GUI/E2E hoặc chạy pytest. Chế độ
+`build.bat --validated` giữ đầy đủ gate thật + pytest cũ; không sửa hoặc giả
+evidence. Sửa lỗi SKIPPED do máy mới chưa có latest-gui-smoke/latest E2E.
+Packaging thành công không tương đương nghiệm thu ứng dụng. Xem
+[hướng dẫn build](docs/EXPORT_AND_BUILD.md) và kết quả thực tế tại BUILD_REPORT.
+Không chạy test/GUI/dịch trong lượt này. Git chưa khởi tạo; không commit/push.
+
+Đã chạy build mặc định thật thành công, exit 0; EXE
+`dist/ImageTranslatorVN/ImageTranslatorVN.exe` (19.969.246 byte), kèm `_internal`.
+Log `logs/build-ImageTranslatorVN.log`; SHA256 và handoff trong BUILD_REPORT.
+Chưa mở binary hoặc nghiệm thu runtime/quality. Build mới chứa sửa xuất batch
+ngoài project, không sửa gate/evidence để giả trạng thái kiểm chứng.
+
+## Cho phép thư mục xuất batch ngoài project — 10/11/2026
+
+Đã bỏ điều kiện `ProcessingManager.validate()` bắt output nằm dưới ROOT.
+Người dùng có thể chọn thư mục xuất riêng ngoài project hoặc khác ổ đĩa.
+Giữ chặn output trùng/cha của nguồn, trùng/cha của ứng dụng hoặc nằm trong
+khu vực mã/model/cache đã bảo vệ; kiểm tra đường dẫn từng file và bảo toàn
+nguồn giữ nguyên. Luồng ảnh đơn/chương truyện đã hỗ trợ xuất ngoài qua
+`sources.service.validate_output`, không sửa. Workspace Whole Chapter thử
+nghiệm vẫn nội bộ, không mở rộng phạm vi trong bản sửa batch.
+
+Cập nhật assertion cũ trong tests/test_core.py để không còn yêu cầu từ chối
+thư mục ngoài project. Chỉ kiểm tra cú pháp AST, không chạy test/GUI/OCR/dịch
+hay build theo yêu cầu người dùng; runtime chưa được nghiệm thu. Hướng dẫn
+build và đường dẫn EXE: [EXPORT_AND_BUILD.md](docs/EXPORT_AND_BUILD.md).
+Git chưa khởi tạo; không stage/commit/push/tag. Xem Git & Fork Handoff tại đó.
+
+## Setup máy hiện tại — 10/11/2026, chỉ cài đặt
+
+Người dùng chọn gốc `D:\WebLocal\IMAGE-TRANSLATOR-VN-main` và yêu cầu
+**chỉ cài đặt, không chạy test**. Đã cài Python 3.10.9 x64 cho toàn máy tại
+`C:\Program Files\Python310`, song song Python 3.15 hiện có; tạo `.venv` mới
+trong project. Cài đủ 18/18 phiên bản trong requirements.txt, setuptools 80.9.0;
+pip check: `No broken requirements found.` Đây là kiểm tra metadata cài đặt,
+không phải import audit hoặc xác minh runtime.
+
+Đã tải từ danh mục chính thức và verify checksum 5 model: det-ch, rec-zh, cls,
+translate-zh_en-1_9, translate-en_vi-1_9. Không cài M2M100/model ngôn ngữ khác.
+Không chạy unittest/pytest/import audit/GUI/E2E/build; không xác nhận ứng dụng
+hoặc EXE chạy thành công trên máy này. Mở source bằng `run_source.bat`.
+
+Evidence và Git & Fork Handoff: [SETUP_20261110.md](docs/SETUP_20261110.md).
+Checkout là bản giải nén không có `.git`: GIT_REPOSITORY_NOT_INITIALIZED.
+NO_COMMIT, NO_PUSH, NO_TAG, NO_DESTRUCTIVE_GIT.
+
 ## ToonCN qua Chrome — live metadata/tải mẫu/GUI đạt, 10/11/2026
 
 Đã xác minh đăng ký Native Messaging, nhận DOM thật từ Chrome cá nhân sau

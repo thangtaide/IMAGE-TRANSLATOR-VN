@@ -1,5 +1,18 @@
 # Báo cáo cài đặt Image Translator VN
 
+## Setup máy mới — 10/11/2026, installation only
+
+Gốc người dùng chọn: `D:\WebLocal\IMAGE-TRANSLATOR-VN-main`. Python 3.10.9 x64
+all-users tại `C:\Program Files\Python310`; `.venv` mới dùng chính interpreter
+này. Giữ Python 3.15 và không thay PATH toàn hệ thống. Pip install requirements
+exit 0, inventory 18/18 pin khớp, setuptools 80.9.0, pip check không có dependency
+hỏng. Năm model tối thiểu zh→en→vi đã tải và verify checksum thành công.
+
+Theo yêu cầu cuối của người dùng, không chạy test, import audit, GUI, E2E hay
+build EXE. Không ghi Ready True hoặc runtime PASS chỉ từ pip exit 0.
+Font dùng Windows đã cài, không sao chép/phân phối font Windows, chưa tải Noto.
+Chi tiết, lệnh chạy và evidence: [setup](docs/SETUP_20261110.md).
+
 ## Xác minh sau mở rộng nguồn ảnh — 07/11/2026
 
 `scripts/check_installation.py`: **16/16 imports, 18/18 requirements, Ready True**,

@@ -468,6 +468,13 @@ trong README và các báo cáo cài đặt vẫn áp dụng.
 
 ## Chọn nguồn
 
+Batch thư mục ảnh có thể xuất ra thư mục riêng ngoài project, ví dụ
+`D:\MangaTranslated` hoặc `E:\TruyenDaDich`. Chọn thư mục đích có quyền ghi;
+không chọn chính nguồn/cha của nguồn, thư mục ứng dụng/cha của ứng dụng hoặc
+khu vực mã/model/cache. Ảnh đơn và chương truyện cũng có thể xuất ngoài.
+Workspace Whole Chapter thử nghiệm vẫn nội bộ trong `output/stage3g-*`.
+Xem [hướng dẫn build EXE](EXPORT_AND_BUILD.md).
+
 - **Ảnh đơn**: chọn ảnh, đọc danh sách, chọn thư mục kết quả rồi dịch ảnh đã có.
 - **Thư mục ảnh**: chọn nguồn và đích riêng biệt, cấu hình quét thư mục con,
   OCR và Offline, rồi Bắt đầu dịch.

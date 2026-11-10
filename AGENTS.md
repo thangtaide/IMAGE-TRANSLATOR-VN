@@ -1,6 +1,6 @@
 # Image Translator VN
 
-- Thư mục gốc duy nhất: `D:\TransTool`.
+- Thư mục gốc hiện tại: `D:\WebLocal\IMAGE-TRANSLATOR-VN-main` (người dùng chọn ngày 10/11/2026). Các đường dẫn `D:\TransTool` trong báo cáo cũ thuộc máy gốc.
 - Không tạo lại dự án từ đầu. Luôn đọc `PROJECT_STATUS.md` trước khi sửa code.
 - Không dùng API trả phí hoặc dịch vụ tự phát sinh chi phí.
 - Offline không được gửi dữ liệu lên Internet; không tự tải model trong job.

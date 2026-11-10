@@ -1,5 +1,54 @@
 # Báo cáo build — lượt tiếp tục 06/11/2026
 
+## Sửa nhận diện AGY cần đăng nhập — 10/11/2026, 09:15 UTC
+
+Build mới thành công exit0, không chạy bộ test/GUI/dịch:
+`dist/ImageTranslatorVN-20261110T091547241775Z/ImageTranslatorVN-20261110T091547241775Z.exe`,
+19.969.570 byte; SHA256
+`bbf770ece2f2b25ed480e20d62195e342cd3bb5b12752123aff656e35f1ede6a`.
+Log `logs/build-ImageTranslatorVN-20261110T091547241775Z.log`.
+
+Binary chứa sửa nhận diện authentication failed/timed out thành AUTH_REQUIRED
+và hướng dẫn đăng nhập AGY thủ công. Không thay model/account/guard, không
+tự gửi lại OCR. Đã xác định nguyên nhân từ đúng attempt được người dùng cho
+phép giải mã trong RAM; không ghi bản rõ. Người dùng xác nhận quên đăng nhập
+và sẽ thử lại. Chưa xác minh đăng nhập hoặc dịch lại thành công.
+Evidence `logs/agy-auth-fix-20261110.json`; xem
+[báo cáo](docs/AGY_AUTH_REQUIRED_20261110.md). Giữ nguyên binary trước.
+
+## Máy hiện tại — build không test thành công, 10/11/2026
+
+Root người dùng chọn: `D:\WebLocal\IMAGE-TRANSLATOR-VN-main`. Do yêu cầu
+không chạy test, đã đổi `build.bat` mặc định thành pip check → PyInstaller,
+không đòi GUI/E2E evidence. `build.bat --validated` giữ gate + pytest cũ;
+scripts/check_build_ready.py và evidence không sửa/giả.
+
+Thực chạy `cmd /c "build.bat <nul"`: exit 0; pip check không có dependency
+hỏng, PyInstaller 6.12.0 hoàn tất onedir khoảng 84 giây. Binary:
+
+`dist/ImageTranslatorVN/ImageTranslatorVN.exe`, 19.969.246 byte,
+SHA256 `2338105c0564e15e548e8991287aefc3f29cf5d573b964336ae6273f0a802c2f`.
+
+Evidence: `logs/build-ImageTranslatorVN.log`,
+`logs/build-packaging-handoff-20261110.json`. `_internal` tồn tại. Chưa mở
+chính binary, chưa chạy GUI/OCR/MT/E2E/unittest/pytest hoặc xác minh portable;
+đây chỉ là **packaging thành công**, không phải runtime/quality PASS.
+Build mới chứa sửa cho phép output batch ngoài project.
+
+Mở bằng `dist\ImageTranslatorVN\ImageTranslatorVN.exe`; giữ toàn bộ thư mục
+build cùng `_internal` và vị trí dưới project/dist. Models vẫn ở project/models.
+Build lại khi bản mặc định tồn tại sẽ dùng tên timestamp để giữ binary cũ.
+Xem [hướng dẫn hiện tại](docs/EXPORT_AND_BUILD.md).
+
+Git & Fork Handoff: GIT_REPOSITORY_NOT_INITIALIZED; branch/HEAD/index không
+có, baseline là các sửa source/docs của phiên setup trước. Thay đổi lượt này:
+build.bat, README.md, PROJECT_STATUS.md, AI_SETUP_HANDOFF.md, BUILD_REPORT.md,
+docs/EXPORT_AND_BUILD.md. `.gitignore` không đổi; runtime build/dist/log/venv/model
+không nên commit, source/BAT/docs cần review. Git diff/check/stat/check-ignore
+không khả dụng, không ghi PASS. Không thêm secret. Người dùng review trong Fork;
+message đề xuất `build: make application validation optional for packaging`.
+NO_COMMIT, NO_PUSH, NO_TAG, NO_DESTRUCTIVE_GIT.
+
 ## Adapter chương 281106 — 07/11/2026, lượt sau GUI tab
 
 **Không build EXE mới cho thay đổi adapter này.** URL chương đã được hỗ trợ và

@@ -1,5 +1,18 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## AGY cần đăng nhập — AUTH_REQUIRED, 10/11/2026
+
+Nếu AGY dừng sau khoảng60s với `authentication failed or timed out`, CLI chưa
+có phiên đăng nhập hợp lệ. Bản cũ gộp lỗi này vào PROVIDER_UNAVAILABLE; bản sửa
+nhận AUTH_REQUIRED và hướng dẫn đúng. Mở PowerShell, chạy `agy`, hoàn tất
+đăng nhập tài khoản trong trình duyệt (hoặc làm theo hướng dẫn mã xác thực của
+CLI). Khi đăng nhập xong, thoát CLI, quay lại ứng dụng và chủ động Tiếp tục.
+Không cần tăng timeout batch/đổi model hoặc thêm API key để xử lý lỗi này.
+Không tự retry, reset journal hoặc xóa cache/output hoàn tất.
+
+Xem [báo cáo attempt thực tế](AGY_AUTH_REQUIRED_20261110.md) và
+[hướng dẫn xác thực chính thức](https://antigravity.google/docs/install).
+
 ## ToonCN — kết nối Chrome và lỗi nguồn
 
 Đã kiểm tra Chrome thật/Native Messaging:32chương,316URLảnh và3ảnh tải hợp lệ.
