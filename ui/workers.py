@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -15,12 +16,13 @@ class ProcessingWorker(QThread):
     event = Signal(dict)
 
     def __init__(self, options: Options, only: list[str] | None = None, parent=None, cache_path: Path | None = None,
-                 resume_id: str | None = None):
+                 resume_id: str | None = None, run_id: str | None = None, run_base: Path | None = None):
         super().__init__(parent)
         self.options, self.only = options, only
         self.control = JobControl()
         self.cache_path = cache_path
         self.resume_id = resume_id
+        self.run_id, self.run_base = run_id, run_base
 
     def run(self) -> None:
         cache = None
@@ -29,11 +31,23 @@ class ProcessingWorker(QThread):
             self.control.checkpoint()
             prepare_inference_runtime()
             self.control.checkpoint()
-            if self.cache_path is not None:
-                cache = TranslationCache(self.cache_path)
-            manager = ProcessingManager(self.options, cache=cache, control=self.control, emit=self.event.emit,
-                                        resume_id=self.resume_id)
-            manager.run(self.only)
+            from core.run_cache import RunRegistry
+            registry = RunRegistry(self.run_base) if self.run_id else None
+            with registry.claim(self.run_id) if registry else nullcontext():
+                if registry:
+                    record = registry.update(self.run_id, state='running')
+                    if Path(record['database']) != Path(self.cache_path):
+                        raise ValueError('CACHE_INVALID_RUN')
+                if self.cache_path is not None:
+                    cache = TranslationCache(self.cache_path)
+                manager = ProcessingManager(self.options, cache=cache, control=self.control, emit=self.event.emit,
+                                            resume_id=self.resume_id,
+                                            input_exclusions=record.get('input_exclusions',[]) if registry else ())
+                result = manager.run(self.only)
+                if cache is not None:
+                    cache.close(); cache = None
+                if registry:
+                    registry.update(self.run_id, state=result['state'], journal_id=manager.resume_id)
         except CancelledError:
             self.event.emit({'type':'finished', 'state':'cancelled', 'errors':[], 'total':0,
                              'completed':0, 'failed':0, 'skipped':0})

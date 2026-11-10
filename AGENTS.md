@@ -1,6 +1,6 @@
 # Image Translator VN
 
-- Thư mục gốc hiện tại: `D:\WebLocal\IMAGE-TRANSLATOR-VN-main` (người dùng chọn ngày 10/11/2026). Các đường dẫn `D:\TransTool` trong báo cáo cũ thuộc máy gốc.
+- Tự xác định PROJECT_ROOT từ workspace chứa project; code/script dùng ROOT suy ra từ vị trí module, tài liệu/output/test dùng đường dẫn tương đối. Không dùng đường dẫn project của máy cũ.
 - Không tạo lại dự án từ đầu. Luôn đọc `PROJECT_STATUS.md` trước khi sửa code.
 - Không dùng API trả phí hoặc dịch vụ tự phát sinh chi phí.
 - Offline không được gửi dữ liệu lên Internet; không tự tải model trong job.

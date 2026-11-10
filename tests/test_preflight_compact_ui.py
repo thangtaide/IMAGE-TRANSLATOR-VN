@@ -7,6 +7,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.provider_preflight import check_configuration
 from core.storage import load_options, save_options
@@ -256,7 +257,7 @@ class CompactUITests(unittest.TestCase):
         from core.types import OCRResult
         from tests.test_gemini_api import HTTPFixture
         source=self.root/'source';source.mkdir()
-        for n in (1,2):Image.new('RGB',(500,200),(n,n,n)).save(source/f'{n}.png')
+        for n in (1,2):provider_page((500,200),n).save(source/f'{n}.png')
         class OCR:
             def identity(self,*args):return 'ocr-preflight-qa'
             def recognize(self,image,*args):

@@ -171,14 +171,15 @@ class FallbackTests(WorkspaceCase):
         self.assertIsNone(record['ocr_source_text'])
         self.assertIsNone(record['source_numeric_tokens'])
 
-    def test_valid_success_never_overwritten_even_when_skip_option_off(self):
+    def test_valid_success_is_preserved_and_skip_off_creates_a_new_result(self):
         source = self.image()
         manager = self.manager_for()
         manager.run()
         dest = manager.destination(source)
         before = (file_digest(dest), dest.stat().st_mtime_ns)
         result = self.manager_for(options=self.options(skip_success=False)).run()
-        self.assertEqual(result['skipped'], 1)
+        self.assertEqual(result['skipped'], 0)
+        self.assertEqual(result['completed'], 1)
         self.assertEqual((file_digest(dest), dest.stat().st_mtime_ns), before)
 
     def test_atomic_save_no_clobber(self):

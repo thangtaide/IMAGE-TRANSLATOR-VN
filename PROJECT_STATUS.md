@@ -1,5 +1,82 @@
 # Trạng thái Image Translator VN
 
+## GUI, cache và dịch lại từ đầu — 10/11/2026, 15:25 UTC
+
+**ĐẠT nhiệm vụ trên máy hiện tại.** Fresh tạo UUID/DB/journal/output riêng;
+không đọc OCR/translation/checkpoint/output receipt cũ. Checkbox skip hoạt
+động; tắt tạo job/output mới, giữ bản cũ. Khôi phục sau mở lại giữ đúng DB
+riêng và không che checkpoint chung. Cleanup chỉ OCR/translation của run
+riêng đã done, có lease/backup/transaction; không xóa DB, journal hoặc output.
+
+GUI sáu khu vực, nút fresh trực tiếp, cache open/manager, menu/combo/dialog
+dark palette. Source/frozen DPI 100/125/150% PASS. Source và EXE thực hiện
+normal/cache/fresh, cancel sau OCR thật, reopen/resume đúng namespace; PNG
+offline cùng fixture giống hệt byte. Full release 607 PASS/0 FAIL/12 SKIP.
+
+EXE bàn giao đã build/chạy:
+`dist/ImageTranslatorVN-20261110T152147487436Z/ImageTranslatorVN-20261110T152147487436Z.exe`.
+AGY thật 3 request hoàn tất (2 ban đầu + 1 được cấp thêm), lượt cuối xử lý
+3/3 ảnh. Gate GUI cũ kiểm trước queued finished bị FAIL; đã sửa QA chờ đúng
+và replay cache thật trên EXE cuối PASS, không gọi thêm. Production bytecode
+60 module + main giữ nguyên so với bản AGY đã chạy. Giữ 5 EXE trước nhiệm vụ và mọi
+output/cache cũ. Không thêm dependency/model hoặc Stage.
+
+[Hướng dẫn](docs/CACHE_UI_GUIDE.md) · [Báo cáo/ảnh/giới hạn](docs/CACHE_UI_REPORT.md).
+Evidence `output/cache-ui-acceptance-20261110T140037Z/`. Không cam kết máy sạch
+hoặc website live của các mục SKIP. NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Nghiệm thu source và EXE xóa chữ — 10/11/2026, 12:05 UTC
+
+**ĐẠT bộ ảnh 0002/0003/0004 trên máy hiện tại.** Đã xem inpaint và JPEG xuất
+thật, không còn chữ Trung gây nhiễu trong vùng dịch, chữ Việt không chồng/cắt
+và giữ đầy đủ target. Còn vệt nền tại dải chữ, được chấp nhận theo tiêu chí đọc.
+0011 và 0005–0010 kiểm tra mở rộng bằng payload cũ; 10 ảnh có inpaint/final/layout
+giống hệt giữa source và frozen EXE khi dùng cùng payload.
+
+AGY thật: 4/6 lần gọi, tất cả thành công (source Batch/Whole, EXE Batch/Whole),
+mỗi request chỉ ba ảnh lỗi. Nguồn và database/output cũ không đổi SHA256.
+Regression cuối 582 PASS/0 FAIL/12 SKIP; Node portable đã xử lý ba FAIL môi
+trường cũ, không đổi PATH hệ thống hoặc Bridge. Source/exe GUI Windows PASS.
+
+EXE mới đã build và kiểm thử pipeline thực:
+`dist/ImageTranslatorVN-20261110T115939410209Z/ImageTranslatorVN-20261110T115939410209Z.exe`.
+Giữ toàn bộ onedir và `_internal` dưới project/dist; dùng models/font hiện có,
+chưa nghiệm thu máy sạch. Bốn EXE cũ giữ nguyên hash.
+
+[Báo cáo nguyên nhân, ảnh, test, build và giới hạn](docs/READABILITY_ACCEPTANCE_20261110.md).
+Evidence mới `output/acceptance-20261110T114108Z/`. Các mục phía dưới là lịch
+sử, bao gồm trạng thái chưa build/chưa có Node của lượt trước.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Ưu tiên khả năng đọc — mask và layout, 10/11/2026
+
+PROJECT_ROOT được xác định từ workspace/module hiện tại; không dùng đường dẫn
+máy cũ. Debug cũ không có tại root này, nên tạo evidence mới từ metadata/cache
+hiện có tại output/readability-review, không OCR/dịch/AGY lại.
+
+Kết quả cuối: test liên quan92PASS/0FAIL/0SKIP; hợp đồng chọn lọc42PASS/3FAIL/
+0SKIP.3FAIL là JavaScript không tìm thấy Node, Python host hiện có và test host
+mock chạy được. Không full regressionPASS, không tự cài Node để làm xanh test.
+
+Sửa mask nét sáng/viền/bóng sát biên; giữ OpenCV Telea và không thêm dependency.
+Renderer lập toàn bộ layout trước khi vẽ: đóng nhóm box giao nhau qua envelope,
+flow đủ nội dung một lần trong vùng chữ hiện có, không đè vùng dịch khác.
+Chỉ loại bản trùng khi polygon+OCR text+target giống hệt; không bỏ câu lặp ở
+vị trí khác hoặc bản dịch khác. Nhóm không vừa/sparse không an toàn báo
+LAYOUT_UNFIT; mask rỗng/lỗi inpaint báo TEXT_REMOVAL_FAILED, không báo dịch xong.
+Lưu render_layout trong metadata; revision mới tách cache ảnh cũ, không sửa job cũ.
+
+Đã xem Original/OCR/mask/inpainted/final của0002,0007,0011.25mục dịch được giữ
+đủ,17nhóm render không giao nhau;0011 từ14box xuống8nhóm, nhóm đầu3dòng24px.
+Nội dung chính16–28px, credit10px. Theo tiêu chí mới chấp nhận vệt nền nhẹ:
+**ĐẠT khả năng đọc trên3ảnh này**, không khẳng định phục hồi nền hoàn hảo hay
+chất lượng mọi ảnh. Không full regressionPASS; xem số liệu cuối và giới hạn
+môi trường Node trong [báo cáo](docs/READABILITY_REPORT.md).
+
+Chỉ source mới được sửa; không build EXE, không thêm Stage/model hoặc gọi AGY.
+Ảnh nguồn/output cũ và database được kiểm hash; không xóa cache/DB/output.
+Git & Fork Handoff trong báo cáo. NO_COMMIT, NO_PUSH, NO_TAG, NO_DESTRUCTIVE_GIT.
+
 ## AGY AUTH_REQUIRED — chẩn đoán attempt b9a0f3df, 10/11/2026
 
 Attempt `b9a0f3df379d4c019e44445fee05aece` exit 1 sau 60,5s, không phải timeout

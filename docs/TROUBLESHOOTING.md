@@ -1,5 +1,20 @@
 # Tra cứu lỗi ảnh — Stage 1–2
 
+## Mask và layout ưu tiên khả năng đọc
+
+- `TEXT_REMOVAL_FAILED`: mask không bao phủ vùng OCR, OpenCV inpaint lỗi hoặc
+  trả ảnh sai cấu trúc. Không chạy renderer tiếp; ảnh dự phòng nếu có được
+  đánh dấu fallback, không phải bản dịch thành công.
+- `LAYOUT_UNFIT`: nội dung không vừa ở font_min đã cấu hình, box ngoài ảnh,
+  envelope nhóm quá thưa hoặc các vùng đặt chữ còn giao nhau. Không cắt target
+  hoặc xuất ảnh chữ chồng. Xem OCR boxes/layout, sửa vùng hoặc cấu hình font;
+  không xóa journal/cache/output cũ để vượt kiểm tra.
+- Source mới giữ OpenCV Telea, ưu tiên sạch nét chữ; vệt nền nhẹ không tự là
+  lỗi nghiệm thu. Chi tiết hình ảnh ngoài mask giữ nguyên; vùng có chữ vẫn có
+  giới hạn phục hồi texture. EXE cũ không tự cập nhật từ source.
+
+Xem [READABILITY_REPORT](READABILITY_REPORT.md) và evidence trong `../output/readability-review/`.
+
 ## AGY cần đăng nhập — AUTH_REQUIRED, 10/11/2026
 
 Nếu AGY dừng sau khoảng60s với `authentication failed or timed out`, CLI chưa
@@ -545,3 +560,30 @@ Source job lưu journal trước khi tải/OCR; pipeline lưu publication intent
 atomic publish. Nếu mất điện sau publish nhưng trước checkpoint, resume có thể
 đối chiếu hash/bitmap và hoàn tất receipt cũ mà không dịch lại. Kiểm thử này dùng
 process/crash fixture, không phải nghiệm thu cắt điện máy thật.
+
+## Dịch lại từ đầu và cache manager
+
+Build EXE không xóa DB/checkpoint runtime. **Bắt đầu dịch** dùng cache hợp lệ;
+bỏ tick skip chỉ yêu cầu xử lý/render lại, chưa buộc OCR/dịch mới. Dùng nút
+**Dịch lại từ đầu** trong tab thư mục để tạo UUID, DB và output mới, không
+cần đổi tên hoặc di chuyển state.sqlite3/WAL/SHM thủ công.
+
+- CACHE_BUSY: run đang được worker/ứng dụng khác dùng; chờ dừng an toàn,
+  không xóa lock/DB hoặc WAL/SHM để ép dọn.
+- CACHE_CHECKPOINT_PROTECTED: run chưa hoàn tất; khôi phục/tiếp tục từ đúng
+  namespace hoặc giữ lại, không dọn checkpoint.
+- CACHE_SCOPE_UNSUPPORTED: chỉ hỗ trợ OCR/bản dịch của run riêng đã done.
+  DB chung, Whole/ToonCN và render receipts chưa có phạm vi dọn an toàn.
+- CACHE_UNSAFE_PATH / CACHE_INVALID_RUN: ID/path/marker không khớp hoặc có
+  link/junction/hardlink; ứng dụng từ chối, không sửa marker bằng tay để ép dọn.
+- CACHE_BACKUP_FAILED hoặc lỗi sao lưu: giữ nguyên cache; kiểm tra quyền ghi,
+  dung lượng và chương trình đang dùng DB rồi chủ động thử lại.
+- Thư mục xuất lượt mới đã tồn tại: chọn vị trí khác. Không ghi đè file cũ.
+- RESUME_RECIPE_CHANGED: khôi phục cấu hình của checkpoint, hoặc chủ động
+  tạo lượt Dịch lại từ đầu. Không xóa toàn bộ cache để vượt guard.
+
+Sau mở lại app, dùng **Thêm → Khôi phục công việc đã lưu** hoặc **Quản lý
+cache → Mở / khôi phục lượt đã chọn**, rồi Tiếp tục. Mở cache dùng thư mục
+của DB đang hoạt động; Whole dùng workspace chứa qa.sqlite3. Backup nằm cạnh
+DB chung trong cache-backups. Dọn rows không tự làm nhỏ file SQLite hoặc xóa
+backup. [Hướng dẫn](CACHE_UI_GUIDE.md) · [Báo cáo](CACHE_UI_REPORT.md).

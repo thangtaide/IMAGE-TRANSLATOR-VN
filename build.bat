@@ -22,7 +22,7 @@ if "%ITVN_VALIDATE_BUILD%"=="0" goto package
 if errorlevel 1 goto fail
 :package
 echo Packaging with PyInstaller. Log: %ITVN_BUILD_LOG%
-.venv\Scripts\python.exe -m PyInstaller --noconfirm ImageTranslatorVN.spec >> "%ITVN_BUILD_LOG%" 2>&1
+.venv\Scripts\python.exe -m PyInstaller --noconfirm --workpath "build\%ITVN_BUILD_NAME%" ImageTranslatorVN.spec >> "%ITVN_BUILD_LOG%" 2>&1
 if errorlevel 1 goto fail
 if not exist dist\%ITVN_BUILD_NAME%\%ITVN_BUILD_NAME%.exe goto fail
 echo Build completed: dist\%ITVN_BUILD_NAME%\%ITVN_BUILD_NAME%.exe

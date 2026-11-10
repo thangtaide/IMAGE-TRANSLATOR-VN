@@ -11,6 +11,7 @@ import requests
 from PIL import Image
 
 from core.pipeline import JobControl, ProcessingManager, TranslationService, NumericMismatchError
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.resume import ResumeStore, work_recipe
 from core.storage import TranslationCache, file_digest
@@ -208,7 +209,7 @@ class GeminiPipelineTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT/'output',prefix='stage3d-')
         self.root=Path(self.temp.name);self.source=self.root/'source';self.source.mkdir()
-        for n in (1,2,3):Image.new('RGB',(500,200),(n,n,n)).save(self.source/f'{n}.png')
+        for n in (1,2,3):provider_page((500,200),n).save(self.source/f'{n}.png')
         self.cache=TranslationCache(self.root/'qa.sqlite3');self.http=HTTPFixture()
         self.env=patch.dict(os.environ,{'GEMINI_API_KEY':CANARY});self.env.start()
         self.ocr_calls=[];owner=self
@@ -358,7 +359,7 @@ class GeminiPipelineTests(unittest.TestCase):
             self.assertEqual(window.mode.currentText(),'Offline')
             for mode in ['Offline','Online Free','AI Gemini AGY',MODE]:
                 self.assertGreaterEqual(window.mode.findData(mode),0)
-            window.mode.setCurrentText(MODE);self.assertIn('GEMINI_API_KEY',window.privacy.text())
+            window.mode.setCurrentIndex(window.mode.findData(MODE));self.assertIn('GEMINI_API_KEY',window.privacy.text())
             self.assertNotIn(CANARY,window.privacy.text())
             settings=SettingsDialog(self.options(),window)
             self.assertTrue(settings.gemini_api_model.isReadOnly());settings.close()

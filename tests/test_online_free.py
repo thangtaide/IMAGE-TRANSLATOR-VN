@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import requests
 from PIL import Image
 
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.pipeline import JobControl, NumericMismatchError, ProcessingManager, TranslationService
 from core.storage import TranslationCache, file_digest
@@ -184,7 +185,7 @@ class OnlineFreeTests(unittest.TestCase):
         src, dst = self.root / 'source', self.root / 'export'
         src.mkdir()
         for n in (1, 2, 3):
-            Image.new('RGB', (260, 150), (n, n, n)).save(src / f'{n}.png')
+            provider_page((260, 150),n).save(src / f'{n}.png')
         self.session.request.side_effect = [translated('Xin chào 1'), response({'responseStatus': 403, 'quotaFinished': True})]
         opts = Options(source=str(src), output=str(dst), mode='Online Free')
         events = []
@@ -228,7 +229,7 @@ class OnlineFreeTests(unittest.TestCase):
         src = self.root / 'chapter'
         src.mkdir()
         for n in (1, 2, 3):
-            Image.new('RGB', (260, 150), (n, n, n)).save(src / f'{n}.png')
+            provider_page((260, 150),n).save(src / f'{n}.png')
         comic, chapters = discover_local(src)
         chapter_cache = ChapterCache(self.root / 'chapter-cache')
         self.session.request.side_effect = [translated('Xin chào 1'), response({'responseStatus': 403, 'quotaFinished': True})]

@@ -1,4 +1,4 @@
-# PyInstaller onedir; AI models remain external under D:\TransTool\models.
+# PyInstaller onedir; AI models remain external under PROJECT_ROOT/models.
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 from pathlib import Path
 import os

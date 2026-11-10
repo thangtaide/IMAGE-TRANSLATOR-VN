@@ -1,8 +1,39 @@
 # IMAGE TRANSLATOR VN
 
-## Máy hiện tại: chạy source, xuất ra thư mục ngoài và build EXE
+## Giao diện mới, cache an toàn và dịch lại từ đầu — 10/11/2026
 
-Project hiện ở `D:\WebLocal\IMAGE-TRANSLATOR-VN-main`; Python 3.10.9,
+**ĐẠT:** nút **Dịch lại từ đầu** trực tiếp trong tab Thư mục ảnh tạo run/DB/
+output riêng, OCR và dịch mới, không dùng checkpoint/cache cũ. Có xác nhận,
+mở/quản lý cache, backup trước khi dọn và khôi phục đúng DB sau mở lại app.
+Menu Thêm và popup đã dùng dark theme thống nhất; DPI 100/125/150% PASS.
+
+EXE đã chạy kiểm thử thực tế:
+`dist/ImageTranslatorVN-20261110T152147487436Z/ImageTranslatorVN-20261110T152147487436Z.exe`.
+Giữ `_internal` và models tại project/models. Full regression 607 PASS,
+0 FAIL, 12 SKIP. AGY thật 3 request hoàn tất sau khi được cấp thêm 1 lượt;
+gate GUI sớm của QA được sửa và kiểm lại bằng cache, không gọi AGY thêm.
+EXE cuối kiểm Offline thật, cache/fresh/resume và cache AGY đúng trạng thái idle.
+Không cần di chuyển SQLite DB thủ công. Dọn DB chung/Whole/ToonCN chưa hỗ trợ.
+
+[Cách sử dụng](docs/CACHE_UI_GUIDE.md) · [Ảnh và báo cáo nghiệm thu](docs/CACHE_UI_REPORT.md).
+Các mục tiếp theo giữ lịch sử các bản trước.
+
+## Bản sửa khả năng đọc đã có EXE kiểm thử — 10/11/2026
+
+**ĐẠT** 0002/0003/0004 thật: xóa nét Trung gây nhiễu, Việt không chồng/cắt,
+giữ đủ target. Source và frozen EXE đã chạy AGY Batch/Whole thật (4/6 request),
+GUI Windows PASS. Regression 582 PASS/0 FAIL/12 SKIP. Nền còn vệt inpaint ở
+dải chữ; không yêu cầu phục chế hoàn hảo. Xem [ảnh và báo cáo](docs/READABILITY_ACCEPTANCE_20261110.md).
+
+Mở EXE mới: `dist/ImageTranslatorVN-20261110T115939410209Z/ImageTranslatorVN-20261110T115939410209Z.exe`.
+Giữ cả thư mục cùng `_internal`, models ở project/models; font dùng Windows.
+Chưa nghiệm thu máy sạch. EXE/output cũ được giữ nguyên và không tự cập nhật;
+tạo lượt xử lý mới để dùng bản sửa. Source mở bằng `run_source.bat`.
+PROJECT_ROOT suy ra từ workspace/module, không cố định ổ đĩa.
+
+## Lịch sử setup: chạy source, xuất ra thư mục ngoài và build EXE
+
+Project dùng ROOT từ workspace; Python 3.10.9,
 `.venv`, dependencies và 5 model Trung giản thể→Việt đã cài. Mở
 `run_source.bat`. Đầu ra batch có thể ở thư mục ngoài project, ví dụ
 `D:\MangaTranslated` hoặc ổ đĩa khác; vẫn cần tách khỏi nguồn và vùng ứng dụng.

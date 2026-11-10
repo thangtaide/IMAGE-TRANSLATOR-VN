@@ -67,6 +67,8 @@ class WholeChapterDialog(QDialog):
         self.resize(700, 460)
         self.options = replace(options or Options())
         self.bound_context = bound_context
+        self.fresh_plan = bound_context.get('fresh_plan') if bound_context else None
+        self.fresh_run_id = self.fresh_plan['run_id'] if self.fresh_plan else None
         self.fixed_translator = translator_kind
         self.input_paths = None
         self.worker = None
@@ -189,6 +191,13 @@ class WholeChapterDialog(QDialog):
         self.manifest_info = None; self.attempt_used = False; self.confirm.setEnabled(False)
         self.counts.setText('Đang chuẩn bị lượt mới độc lập; chưa gửi AGY.')
         self.workspace = ROOT / 'output' / ('stage3g-' + stamp + '-' + uuid4().hex[:8])
+        if self.fresh_plan:
+            from core.run_cache import plain_path
+            planned=plain_path(self.fresh_plan['workspace'])
+            if planned.parent != (ROOT/'output').resolve() or planned.name != 'stage3g-restart-'+self.fresh_plan['run_id']:
+                self.status.setText('Lượt mới có đường dẫn không hợp lệ; không xử lý.');return
+            self.workspace=planned
+            self.fresh_plan=None
         try:
             self.workspace.parent.mkdir(parents=True,exist_ok=True)
             self.workspace.mkdir(exist_ok=False)
@@ -198,6 +207,10 @@ class WholeChapterDialog(QDialog):
             self.resume.setEnabled(False); self.open_result.setEnabled(False)
             return
         self.progress.setValue(0)
+        if self.fresh_run_id:
+            from core.storage import atomic_json
+            atomic_json(self.workspace/'run-id.json',dict(run_id=self.fresh_run_id,cache_policy='isolated-new-workspace'))
+            self.fresh_run_id=None
         self.begin()
 
     def restore_job(self):

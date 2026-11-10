@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from core.imaging import SUPPORTED, TextRenderer, atomic_save, default_font, erase_text, open_image
+from core.imaging import IMAGING_REVISION, SUPPORTED, TextRenderer, atomic_save, default_font, erase_text, open_image
 from core.ocr import PaddleOCREngine
 from core.ocr_overrides import OCRRegionOverrides
 from core.paths import ROOT
@@ -263,7 +263,7 @@ class ProcessingManager:
                  control: JobControl | None = None, emit: Callable[[dict], None] = lambda _: None,
                  ocr=None, service=None, chapter_id: str | None = None, diagnostic_root: Path | None = None,
                  override_registry: OCRRegionOverrides | None = None, resume_id: str | None = None,
-                 prepared_chapter=None):
+                 prepared_chapter=None, input_exclusions=()):
         self.options = options
         self.cache = cache or TranslationCache()
         self.owns_cache = cache is None
@@ -287,6 +287,7 @@ class ProcessingManager:
         self.resume_id = resume_id
         self.journal = None
         self.prepared_chapter = prepared_chapter
+        self.input_exclusions = tuple(Path(p).resolve() for p in input_exclusions)
 
     def cache_source_hash(self, path):
         value = file_digest(path)
@@ -297,6 +298,8 @@ class ProcessingManager:
         return value
 
     def page_done(self, path, relevant, ocr_identity, service_identity):
+        if not self.options.skip_success:
+            return False
         previous = self.cache.item(self.job_id, str(path))
         if not previous or previous['status'] != 'done':
             return False
@@ -434,6 +437,7 @@ class ProcessingManager:
         try:
             self.validate()
             files = scan_images(self.source, self.options.recursive, self.output)
+            files = [p for p in files if not any(p.resolve().is_relative_to(root) for root in self.input_exclusions)]
             image_indices = {str(p): n for n, p in enumerate(files, 1)}
             self.page_indices = image_indices
             if only is not None:
@@ -464,9 +468,14 @@ class ProcessingManager:
                     preflight_error, preflight_stage = exc, 'TRANSLATION'
                 service_identity = 'unavailable:' + type(exc).__name__
             relevant = self.options.to_dict()
-            relevant['imaging_revision'] = 'adaptive-mask-v2'
+            relevant['imaging_revision'] = IMAGING_REVISION
             relevant['text_region_revision'] = 'preserve-symbol-regions-v1'
             relevant.pop('skip_success', None)
+            if not self.options.skip_success:
+                # A repeat render gets separate receipts/output names, preserving old checkpoints.
+                repeat_id = self.journal.setdefault('render_repeat_id', uuid4().hex)
+                self.resume_store.save(self.journal)
+                relevant['render_repeat_id'] = repeat_id
             # Operational logging must not invalidate existing job/translation keys.
             relevant.pop('diagnostic_text', None)
             for key in ('gemini_api_model', 'gemini_api_timeout', 'gemini_api_max_requests', 'gemini_api_free_tier_confirmed'):
@@ -519,7 +528,7 @@ class ProcessingManager:
                     fingerprint = digest(fingerprint_parts)
                     stage = 'EXPORT'
                     previous = self.cache.item(self.job_id, str(path))
-                    if previous and previous['status'] == 'done' and previous['fingerprint'] == fingerprint:
+                    if self.options.skip_success and previous and previous['status'] == 'done' and previous['fingerprint'] == fingerprint:
                         if destination.is_file():
                             old = self.cache.get('output-hash', str(destination))
                             if old == file_digest(destination):
@@ -587,7 +596,8 @@ class ProcessingManager:
                         'size': list(image.size), 'regions': [asdict(r) for r in regions],
                         'preserved_regions': [asdict(r) for r in preserved_regions], 'ocr_overrides': override_receipts,
                         'no_text_to_translate': not regions, 'numeric_validator_version': VALIDATOR_VERSION,
-                        'translations': translations, 'warnings': warnings}
+                        'translations': translations, 'warnings': warnings,
+                        'render_layout': renderer.last_layout}
                     def before_publish(temp):
                         if self.prepared_chapter is not None:
                             self.prepared_chapter.for_page(path, regions)  # Recheck the chapter transaction before publish.

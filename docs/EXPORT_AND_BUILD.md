@@ -1,5 +1,30 @@
 # Thư mục xuất ngoài project và build EXE — 10/11/2026
 
+## Release GUI/cache mới nhất
+
+Mở `dist/ImageTranslatorVN-20261110T152147487436Z/ImageTranslatorVN-20261110T152147487436Z.exe`.
+Đã chạy source/EXE pipeline, cache/fresh/cancel/reopen/resume thật; full release
+607 PASS/0 FAIL/12 SKIP. Ba request AGY thật hoàn tất (2 ban đầu + 1 được
+cấp thêm). Gate GUI sớm được sửa trong QA, cache AGY replay/idle trên EXE cuối
+PASS và không thêm request. Production 60 module + main không đổi; release
+cuối cũng chạy Offline fresh/cancel/reopen/resume thật.
+Giữ `_internal` và models ngoài gói. Chưa nghiệm thu máy sạch.
+
+Build.bat vẫn dùng PyInstaller hiện có, nay workpath riêng theo tên build để
+giữ intermediates cũ. Không cần clear SQLite khi dùng **Dịch lại từ đầu**.
+[Hướng dẫn cache](CACHE_UI_GUIDE.md) · [Báo cáo](CACHE_UI_REPORT.md).
+Các release và ghi chú bên dưới là lịch sử.
+
+## Bản đã nghiệm thu mới nhất
+
+Source/EXE AGY thật, ảnh 0002/0003/0004 và GUI Windows đã PASS; regression
+582 PASS/0 FAIL/12 SKIP. Mở
+`dist/ImageTranslatorVN-20261110T115939410209Z/ImageTranslatorVN-20261110T115939410209Z.exe`.
+Giữ `_internal` và vị trí dưới project/dist; models ngoài EXE, font Windows.
+Chưa nghiệm thu máy sạch. [Báo cáo, ảnh và giới hạn](READABILITY_ACCEPTANCE_20261110.md).
+EXE cũ và output cũ không tự cập nhật; tạo lượt dịch mới với binary mới.
+Các ghi chú chưa chạy test/Git archive phía dưới là lịch sử setup trước đó.
+
 ## Thư mục xuất
 
 Batch thư mục ảnh nay cho chọn đích ngoài project hoặc khác ổ đĩa, ví dụ
@@ -19,11 +44,7 @@ chặn thay cho một thư mục ngoài hợp lệ. Kiểm tra AST của hai fil
 ## Build bằng PowerShell
 
 Môi trường `.venv` và PyInstaller đã cài. Đóng ứng dụng trước khi build.
-Trong PowerShell, chuyển tới project:
-
-```powershell
-cd D:\WebLocal\IMAGE-TRANSLATOR-VN-main
-```
+Mở PowerShell tại PROJECT_ROOT được xác định từ workspace hiện tại.
 
 Build mặc định chỉ kiểm tra dependency bằng pip check và đóng gói PyInstaller,
 không đòi evidence GUI/E2E hoặc chạy test:
@@ -47,7 +68,7 @@ và interpreter; sau đó chạy pip check, pytest và PyInstaller. Không giả
 EXE đầu tiên, nếu build thành công:
 
 ```text
-D:\WebLocal\IMAGE-TRANSLATOR-VN-main\dist\ImageTranslatorVN\ImageTranslatorVN.exe
+dist\ImageTranslatorVN\ImageTranslatorVN.exe
 ```
 
 Nếu bản mặc định đã tồn tại, build.bat tạo tên timestamp:

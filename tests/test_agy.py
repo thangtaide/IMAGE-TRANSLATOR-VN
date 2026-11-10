@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.pipeline import JobControl, NumericMismatchError, ProcessingManager, TranslationService
 from core.storage import TranslationCache, file_digest
@@ -259,7 +260,7 @@ class AGYTests(unittest.TestCase):
         source = self.root / 'source'
         source.mkdir()
         for n in (1, 2, 3):
-            Image.new('RGB', (260, 150), (n, n, n)).save(source / f'{n}.png')
+            provider_page((260, 150),n).save(source / f'{n}.png')
         def runner(argv, payload, cwd, timeout, cancelled):
             if payload is not None and len(self.runner.calls) == 1:
                 self.runner.failure = (1, envelope([], status='ERROR', error={'code': 'RESOURCE_EXHAUSTED'}), b'')
@@ -292,7 +293,7 @@ class AGYTests(unittest.TestCase):
         from tests.test_online_free import OCRFixture, OfflineFixture
         source = self.root / 'source'
         source.mkdir()
-        Image.new('RGB', (260, 150), (1, 1, 1)).save(source / '1.png')
+        provider_page((260, 150),1).save(source / '1.png')
         options = Options(source=str(source), output=str(self.root / 'export'))
         def run(opts):
             return ProcessingManager(opts, self.cache, ocr=OCRFixture(),
@@ -342,7 +343,7 @@ class AGYTests(unittest.TestCase):
         window.show()
         for tab in range(3):
             window.source_tabs.setCurrentIndex(tab)
-            window.mode.setCurrentText(MODE)
+            window.mode.setCurrentIndex(window.mode.findData(MODE))
             app.processEvents()
             self.assertTrue(window.mode.isVisible())
             self.assertIn('AGY', window.privacy.text())
@@ -362,7 +363,7 @@ class AGYTests(unittest.TestCase):
         from ui.main_window import MainWindow
         app = QApplication.instance() or QApplication([])
         window = MainWindow(cache_path=self.root / 'settings-gui.sqlite3', persist_settings=False)
-        window.mode.setCurrentText(MODE)
+        window.mode.setCurrentIndex(window.mode.findData(MODE))
         with patch('ui.main_window.SettingsDialog') as dialog:
             def accept():
                 window.options.agy_model = 'gemini-3.8-flash-high'

@@ -33,7 +33,13 @@ def duration(seconds: float | None) -> str:
 class MainWindow(QMainWindow):
     def __init__(self, cache_path: Path | None = None, persist_settings: bool = True):
         super().__init__()
-        self.cache_path = cache_path
+        from core.run_cache import RunRegistry
+        from ui.theme import apply_dark_theme
+        apply_dark_theme()
+        self.run_registry = RunRegistry(cache_path)
+        self.cache_path = self.run_registry.database
+        self.active_cache_path = self.cache_path
+        self.active_run_id = None
         self.persist_settings = persist_settings
         from ui.fonts import configure_ui_font
         self.font_report = configure_ui_font()
@@ -43,6 +49,9 @@ class MainWindow(QMainWindow):
         self.resize(min(1100, screen.width()-40), min(760, screen.height()-60))
         self.ui_job_state = 'IDLE'
         self.options = load_options()
+        restored_run=self.run_registry.active(self.options)
+        if restored_run:
+            self.active_cache_path=Path(restored_run['database']);self.active_run_id=restored_run['run_id']
         tools_menu = self.menuBar().addMenu('Công cụ')
         tools_menu.addAction('Whole Chapter Translation (nâng cao)…', self.show_whole_chapter)
         self.whole_dialog = None
@@ -68,11 +77,12 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         central = QWidget()
-        central.setMinimumWidth(620)
+        central.setMinimumWidth(540)
         scroll.setWidget(central)
         self.setCentralWidget(scroll)
         outer = QVBoxLayout(central)
-        outer.setSpacing(6)
+        outer.setSpacing(8)
+        outer.setContentsMargins(12,10,12,12)
         title = QLabel('IMAGE TRANSLATOR VN')
         title.setObjectName('title')
         outer.addWidget(title)
@@ -83,7 +93,7 @@ class MainWindow(QMainWindow):
         self.folder_page = QWidget()
         folder_layout = QVBoxLayout(self.folder_page)
         folder_layout.setSpacing(10)
-        self.folder_inputs = QGroupBox('Thư mục ảnh')
+        self.folder_inputs = QGroupBox('1. Nguồn và đầu ra')
         config = QVBoxLayout(self.folder_inputs)
         self.source = QLineEdit(self.options.source)
         self.output = QLineEdit(self.options.output)
@@ -98,33 +108,35 @@ class MainWindow(QMainWindow):
             button.clicked.connect(lambda checked=False, w=widget: self.choose_folder(w))
             row.addWidget(button)
             config.addLayout(row)
-        choices = QHBoxLayout()
+        self.folder_choices = QGroupBox('2. Tùy chọn')
+        choices = QGridLayout(self.folder_choices)
         self.recursive = QCheckBox('Quét thư mục con')
         self.recursive.setChecked(self.options.recursive)
         self.keep_original = QCheckBox('Giữ nguyên ảnh gốc (bắt buộc)')
         self.keep_original.setChecked(True)
         self.keep_original.setEnabled(False)
         self.skip = QCheckBox('Bỏ qua ảnh đã xử lý thành công')
-        self.skip.setChecked(True)
-        self.skip.setEnabled(False)
-        self.skip.setToolTip('Ảnh thành công có checkpoint/hash hợp lệ luôn được bảo toàn. Đổi thư mục xuất hoặc recipe để tạo bản mới.')
+        self.skip.setChecked(self.options.skip_success)
+        self.skip.setToolTip('Bật: bỏ qua output có checksum hợp lệ. Tắt: tạo bản render mới, vẫn có thể dùng OCR/bản dịch cache. Dùng Dịch lại từ đầu để OCR/dịch mới hoàn toàn.')
         self.structure = QCheckBox('Giữ cấu trúc thư mục nguồn')
         self.structure.setChecked(self.options.preserve_structure)
-        for widget in [self.recursive, self.keep_original, self.skip, self.structure]:
-            choices.addWidget(widget)
-        config.addLayout(choices)
-        folder_layout.addWidget(self.folder_inputs)
+        for i,widget in enumerate([self.recursive, self.keep_original, self.skip, self.structure]):
+            choices.addWidget(widget,i//2,i%2)
+        header=QWidget();self.folder_header=QGridLayout(header);self.folder_header.setContentsMargins(0,0,0,0)
+        self.folder_header.addWidget(self.folder_inputs,0,0);self.folder_header.addWidget(self.folder_choices,1,0)
+        folder_layout.addWidget(header)
         self.config_panel = QGroupBox('OCR và dịch')
         config = QVBoxLayout(self.config_panel)
-        row = QHBoxLayout()
-        row.addWidget(QLabel('OCR'))
+        row = QGridLayout()
+        row.setColumnStretch(1,1)
+        row.addWidget(QLabel('OCR'),0,0)
         self.language = QComboBox()
         for label, code in [('Trung giản thể', 'zh'), ('Trung phồn thể', 'zt'), ('Hàn', 'ko'), ('Anh', 'en'), ('Tự động (4 bộ model)', 'auto')]:
             self.language.addItem(label, code)
         self.language.setCurrentIndex(max(0, self.language.findData(self.options.language)))
-        row.addWidget(self.language)
+        row.addWidget(self.language,0,1)
         self.mode_label = QLabel('Dịch')
-        row.addWidget(self.mode_label)
+        row.addWidget(self.mode_label,1,0)
         self.mode = QComboBox()
         for label, value in [('Offline','Offline'), ('Online Free','Online Free'),
                 ('AI Gemini AGY — Batch', AGY_MODE), ('AI Gemini AGY — Toàn chương (1 lần)', WHOLE_MODE),
@@ -135,7 +147,7 @@ class MainWindow(QMainWindow):
         self.mode.setItemData(1, 'Online Free — MyMemory Machine Translation API', Qt.ToolTipRole)
         self.mode.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.mode.setMinimumContentsLength(10)
-        row.addWidget(self.mode, 1)
+        row.addWidget(self.mode,1,1,1,2)
         self.online_provider = QComboBox()
         self.online_provider.addItems(['MyMemory', 'LibreTranslate'])
         self.online_provider.setCurrentText(self.options.online_provider)
@@ -151,9 +163,9 @@ class MainWindow(QMainWindow):
         self.provider_info = QLabel()
         self.provider_info.setWordWrap(True)
         self.provider_info.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        row.addWidget(self.provider_info, 1)
+        row.addWidget(self.provider_info,2,0,1,3)
         self.settings_button = QPushButton('Cài đặt')
-        row.addWidget(self.settings_button)
+        row.addWidget(self.settings_button,0,2)
         config.addLayout(row)
         self.allow_fallback = QCheckBox('Tôi đồng ý gửi văn bản OCR tới provider Online miễn phí nếu Offline lỗi (chỉ Auto Fallback)')
         self.allow_fallback.setChecked(self.options.allow_online_fallback)
@@ -172,11 +184,19 @@ class MainWindow(QMainWindow):
         self.resume_previous = QPushButton('Khôi phục cấu hình công việc chưa hoàn thành')
         self.resume_previous.clicked.connect(self.restore_previous)
         folder_layout.addWidget(self.resume_previous)
-        cache = TranslationCache(self.cache_path)
+        self.pending_cache_path=self.active_cache_path
+        self.pending_run_id=self.active_run_id
+        cache = TranslationCache(self.active_cache_path)
         self.pending_options = cache.pending_job()
         cache.close()
         from core.resume import ResumeStore
-        self.pending_journal = ResumeStore(self.cache_path).latest('pipeline')
+        self.pending_journal = ResumeStore(self.active_cache_path).latest('pipeline')
+        if not self.pending_options and not self.pending_journal and self.active_cache_path!=self.cache_path:
+            # A completed isolated run must not hide a legacy unfinished checkpoint.
+            cache=TranslationCache(self.cache_path)
+            self.pending_options=cache.pending_job();cache.close()
+            self.pending_journal=ResumeStore(self.cache_path).latest('pipeline')
+            self.pending_cache_path=self.cache_path;self.pending_run_id=None
         if self.pending_journal:
             self.pending_options = Options.from_dict(self.pending_journal['options'])
             self.resume_previous.setText('Khôi phục công việc còn dở (không tự chạy)')
@@ -185,8 +205,12 @@ class MainWindow(QMainWindow):
         controls.setSpacing(8)
         self.start_button = QPushButton('Bắt đầu dịch')
         self.start_button.setObjectName('primary')
+        self.fresh_button = QPushButton('Dịch lại từ đầu')
+        self.fresh_button.setObjectName('restart')
+        self.fresh_button.setToolTip('Tạo lượt riêng: OCR và dịch mới, không đọc cache/checkpoint cũ; giữ nguyên dữ liệu cũ.')
         self.pause_button = QPushButton('Tạm dừng')
-        self.continue_button = QPushButton('Tiếp tục từ cache')
+        self.continue_button = QPushButton('Tiếp tục')
+        self.continue_button.setToolTip('Tiếp tục worker đang tạm dừng hoặc checkpoint của lượt hiện tại; giữ các ảnh đã hoàn tất.')
         self.cancel_button = QPushButton('Hủy')
         self.retry_button = QPushButton('Thử lại ảnh lỗi / chưa xong')
         self.open_button = QPushButton('Mở kết quả')
@@ -197,9 +221,16 @@ class MainWindow(QMainWindow):
         self.review_button.hide()
         self.models_button = QPushButton('Quản lý mô hình AI')
         self.settings_button.setToolTip('Thiết lập Gemini API, provider nâng cao, font và xuất ảnh')
-        for position, button in enumerate([self.start_button, self.pause_button, self.continue_button,
-                                          self.cancel_button, self.open_button]):
-            controls.addWidget(button, 0, position)
+        for position, button in enumerate([self.start_button,self.fresh_button,self.pause_button,
+                                          self.continue_button,self.cancel_button]):
+            controls.addWidget(button,position//3,position%3)
+        operations = QGroupBox('3. Thao tác chính')
+        operations.setLayout(controls);folder_layout.addWidget(operations)
+        tools = QGroupBox('4. Công cụ');tool_layout = QGridLayout(tools)
+        self.cache_open_button = QPushButton('Mở thư mục cache')
+        self.cache_manager_button = QPushButton('Quản lý cache')
+        for i,button in enumerate([self.open_button,self.cache_open_button,self.cache_manager_button]):
+            tool_layout.addWidget(button,0,i)
         self.folder_more = QToolButton()
         self.folder_more.setText('Thêm')
         self.folder_more.setPopupMode(QToolButton.InstantPopup)
@@ -215,12 +246,19 @@ class MainWindow(QMainWindow):
         menu.aboutToShow.connect(lambda: [a.setEnabled(b.isEnabled() and
             (b != self.resume_previous or self.pending_options is not None)) for a,b in actions])
         self.folder_more.setMenu(menu)
-        controls.addWidget(self.folder_more, 0, 5)
-        folder_layout.addLayout(controls)
+        tool_layout.addWidget(self.folder_more,0,3)
+        self.cache_scope_label = QLabel('Cache hợp lệ • Lượt thông thường')
+        self.cache_scope_label.setObjectName('muted');self.cache_scope_label.setWordWrap(True)
+        if self.active_run_id:self.cache_scope_label.setText('Run '+self.active_run_id[:12]+' • cache riêng đã lưu • chưa tự chạy')
+        tool_layout.addWidget(self.cache_scope_label,1,0,1,4)
+        folder_layout.addWidget(tools)
         common = QHBoxLayout()
         common.addStretch()
         self.models_button.setText('Mô hình cục bộ')
         self.start_button.clicked.connect(lambda: self.start())
+        self.fresh_button.clicked.connect(self.start_fresh)
+        self.cache_open_button.clicked.connect(self.open_cache)
+        self.cache_manager_button.clicked.connect(self.manage_cache)
         self.pause_button.clicked.connect(self.pause)
         self.continue_button.clicked.connect(self.resume)
         self.cancel_button.clicked.connect(self.cancel)
@@ -231,14 +269,17 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setFormat('%p%')
-        folder_layout.addWidget(self.progress)
+        progress_box = QGroupBox('5. Tiến trình');progress_layout = QVBoxLayout(progress_box)
+        progress_layout.addWidget(self.progress)
         self.current = QLabel('Sẵn sàng. Cài model qua Quản lý mô hình AI trước khi dịch.')
         self.current.setWordWrap(True)
-        folder_layout.addWidget(self.current)
-        self.stats = QLabel('Tổng số ảnh: 0  •  Hoàn thành: 0  •  Lỗi: 0  •  Bỏ qua: 0')
+        progress_layout.addWidget(self.current)
+        self.stats = QLabel('Tổng ảnh: 0 • Đã xử lý: 0 • Thành công: 0 • Lỗi: 0 • Bỏ qua: 0')
         self.clock_label = QLabel('Đã chạy: 00:00:00  •  Còn lại: Đang ước tính')
-        folder_layout.addWidget(self.stats)
-        folder_layout.addWidget(self.clock_label)
+        self.stats.setWordWrap(True);self.clock_label.setWordWrap(True)
+        progress_layout.addWidget(self.stats)
+        progress_layout.addWidget(self.clock_label)
+        folder_layout.addWidget(progress_box)
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(['Tên file', 'Ngôn ngữ', 'Trạng thái', 'Tiến trình', 'Kết quả / Chi tiết'])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
@@ -247,7 +288,8 @@ class MainWindow(QMainWindow):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.cellDoubleClicked.connect(self.inspect)
         self.table.setMinimumHeight(160)
-        folder_layout.addWidget(self.table, 1)
+        list_box = QGroupBox('6. Danh sách ảnh');list_layout = QVBoxLayout(list_box)
+        list_layout.addWidget(self.table);folder_layout.addWidget(list_box,1)
         hint = QLabel('Nhấp đúp để xem ảnh trước/sau hoặc chi tiết lỗi. Nền phức tạp và chữ dọc cần kiểm tra preview.')
         hint.setWordWrap(True)
         folder_layout.addWidget(hint)
@@ -273,36 +315,24 @@ class MainWindow(QMainWindow):
             panel.wholeRequested.connect(self.open_selected_whole)
         outer.addWidget(self.source_tabs, 1)
         self.set_running(False)
-        self.setStyleSheet('''
-            QMainWindow, QDialog { background: #111827; color: #e5e7eb; }
-            QWidget { font-size: 12px; color: #e5e7eb; }
-            QGroupBox { border: 1px solid #374151; border-radius: 8px; margin-top: 14px; padding: 14px 8px 8px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 12px; }
-            QLabel#title { font-size: 20px; font-weight: 700; color: #60a5fa; }
-            QLabel#subtitle { color: #9ca3af; padding-bottom: 10px; }
-            QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit { background: #1f2937; border: 1px solid #4b5563; border-radius: 4px; padding: 6px; }
-            QComboBox QAbstractItemView { background: #1f2937; selection-background-color: #2563eb; }
-            QPushButton, QToolButton { background: #273449; border: 1px solid #475569; border-radius: 5px; padding: 9px; }
-            QPushButton:hover { background: #334155; }
-            QPushButton#primary { background: #2563eb; font-weight: 600; }
-            QPushButton:disabled { color: #6b7280; background: #1f2937; }
-            QScrollArea, QScrollArea > QWidget > QWidget { background: #111827; }
-            QTabWidget::pane { border: 1px solid #374151; border-radius: 7px; padding: 8px; }
-            QTabBar::tab { background: #1f2937; padding: 8px 16px; margin-right: 4px; }
-            QTabBar::tab:selected { background: #2563eb; color: white; }
-            QTableWidget { background: #172033; alternate-background-color: #1f2937; gridline-color: #374151; }
-            QHeaderView::section { background: #273449; padding: 8px; border: 0; }
-            QTableCornerButton::section { background: #273449; border: 0; }
-            QScrollBar:vertical { background: #111827; width: 12px; }
-            QScrollBar::handle:vertical { background: #475569; min-height: 24px; border-radius: 4px; }
-            QProgressBar { background: #1f2937; border: 1px solid #374151; text-align: center; min-height: 22px; border-radius: 4px; }
-            QProgressBar::chunk { background: #2563eb; }
-        ''')
+        QTimer.singleShot(0,self.adjust_folder_layout)
+
 
     def choose_folder(self, field: QLineEdit) -> None:
         path = QFileDialog.getExistingDirectory(self, 'Chọn thư mục', field.text() or str(ROOT))
         if path:
             field.setText(path)
+
+    def adjust_folder_layout(self):
+        if not hasattr(self,'folder_header'):return
+        self.folder_header.removeWidget(self.folder_choices)
+        self.folder_header.addWidget(self.folder_choices,0,1) if self.width()>=980 else self.folder_header.addWidget(self.folder_choices,1,0)
+        self.folder_header.setColumnStretch(0,3)
+        self.folder_header.setColumnStretch(1,2 if self.width()>=980 else 0)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if hasattr(self,'folder_header'):QTimer.singleShot(0,self.adjust_folder_layout)
 
     def update_mode(self, *_args) -> None:
         mode = self.mode.currentData()
@@ -384,10 +414,74 @@ class MainWindow(QMainWindow):
         self.options.skip_success = self.skip.isChecked()
         return Options.from_dict(self.options.to_dict())
 
+    def current_cache_database(self):
+        if self.mode.currentData()==WHOLE_MODE and self.last_whole_output:
+            return self.last_whole_output.parent/'qa.sqlite3'
+        return self.active_cache_path
+
+    def open_cache(self):
+        from ui.cache_manager import open_cache_directory
+        return open_cache_directory(self.current_cache_database(),self)
+
+    def manage_cache(self):
+        from ui.cache_manager import CacheManagerDialog
+        dialog=CacheManagerDialog(self.run_registry,self.current_cache_database(),self)
+        dialog.restoreRequested.connect(self.restore_isolated_run)
+        dialog.exec()
+
+    def restore_isolated_run(self,run_id):
+        try:
+            from core.resume import ResumeStore
+            record=self.run_registry.read(run_id)
+            with self.run_registry.claim(run_id):
+                self.pending_options=Options.from_dict(record['options'])
+                self.pending_journal=ResumeStore(Path(record['database'])).latest('pipeline')
+                self.pending_cache_path=Path(record['database']);self.pending_run_id=run_id
+                self.run_registry.activate(run_id)
+            self.restore_previous()
+            self.active_cache_path=Path(record['database']);self.active_run_id=run_id
+            self.cache_scope_label.setText('Run '+run_id[:12]+' • cache riêng • tiếp tục checkpoint của lượt này')
+        except (OSError,ValueError,KeyError) as exc:
+            QMessageBox.warning(self,'Không khôi phục được lượt',str(exc))
+
+    def start_fresh(self):
+        if self.worker and self.worker.isRunning():return
+        if any(p.worker and p.worker.isRunning() for p in (self.image_panel,self.url_panel)):return
+        from ui.fresh_run import FreshRunDialog
+        from PySide6.QtWidgets import QDialog
+        options=self.collect_options()
+        if self.active_run_id:
+            try:
+                previous=self.run_registry.read(self.active_run_id)
+                options.output=previous.get('output_base',str(Path(previous['output']).parent))
+            except (OSError,ValueError,KeyError):pass
+        if not options.source or not Path(options.source).is_dir():
+            QMessageBox.warning(self,'Thiếu nguồn','Chọn thư mục ảnh nguồn tồn tại.');return
+        if not options.output:
+            QMessageBox.warning(self,'Thiếu đầu ra','Chọn thư mục xuất trước.');return
+        dialog=FreshRunDialog(options,self.run_registry,self)
+        if dialog.exec()!=QDialog.Accepted:return
+        if options.mode==WHOLE_MODE:
+            self.open_selected_whole(dict(kind='folder',path=options.source,recursive=options.recursive,
+                options=options,force_new=True,fresh_plan=dialog.plan))
+            return
+        if not self.check_provider_setup(options):return
+        try:
+            record=self.run_registry.create(dialog.plan,options)
+            self.output.setText(record['output'])  # Clears old resume intent before binding the new namespace.
+            self.skip.setChecked(True)
+            self.active_cache_path=Path(record['database']);self.active_run_id=record['run_id']
+            self.cache_scope_label.setText('Run '+record['run_id'][:12]+' • cache bypass cũ • OCR/dịch mới')
+            self.start()
+        except (OSError,ValueError,KeyError) as exc:
+            QMessageBox.warning(self,'Không tạo được lượt mới',str(exc))
+
     def start(self, only: list[str] | None = None) -> None:
         if self.worker and self.worker.isRunning():
             return
         options = self.collect_options()
+        if only is None and not options.skip_success:
+            self.resume_id=None  # A repeat render is separate from explicitly continuing a checkpoint.
         if options.mode == WHOLE_MODE:
             if only is not None:
                 QMessageBox.information(self, 'Retry thuộc công việc Batch',
@@ -424,7 +518,8 @@ class MainWindow(QMainWindow):
         self.pause_seconds = 0
         self.paused_at = None
         self.current.setText('Đang quét thư mục và kiểm tra model...')
-        self.worker = ProcessingWorker(options, only, self, cache_path=self.cache_path, resume_id=self.resume_id)
+        self.worker = ProcessingWorker(options, only, self, cache_path=self.active_cache_path, resume_id=self.resume_id,
+            run_id=self.active_run_id,run_base=self.cache_path)
         self.worker.event.connect(self.handle_event)
         self.worker.finished.connect(self.worker_finished)
         self.set_running(True)
@@ -434,6 +529,10 @@ class MainWindow(QMainWindow):
     def clear_resume_intent(self, *_):
         # Choosing a new input/output starts a new work scope, retaining the old journal.
         self.resume_id = None
+        self.active_cache_path = self.cache_path
+        self.active_run_id = None
+        if hasattr(self,'cache_scope_label'):
+            self.cache_scope_label.setText('Cache hợp lệ • Lượt thông thường')
         self.provider_paused = False
         self.provider_pending = []
 
@@ -442,8 +541,11 @@ class MainWindow(QMainWindow):
             self.ui_job_state = 'RUNNING'
         self.config_panel.setEnabled(not running)
         self.folder_inputs.setEnabled(not running)
+        self.folder_choices.setEnabled(not running)
         self.source_tabs.tabBar().setEnabled(not running)
         self.start_button.setEnabled(not running)
+        self.fresh_button.setEnabled(not running)
+        self.cache_manager_button.setEnabled(not running)
         self.pause_button.setEnabled(running)
         self.continue_button.setEnabled(False)
         self.cancel_button.setEnabled(running)
@@ -540,8 +642,8 @@ class MainWindow(QMainWindow):
                 f"{review.get('diagnostic_path') or review.get('diagnostic_error') or 'Không ghi được diagnostic'}")
             self.details[path] = event.get('detail', '') + '\n' + self.current.text()
             self.table.item(row, 4).setToolTip(self.details[path])
-        self.stats.setText(f"Tổng: {event['total']} • Dịch mới: {event['completed']} • "
-            f"Ảnh gốc dự phòng: {event.get('fallback_original', 0)} • Không output: {event.get('failed_no_output', event['failed'])} • "
+        self.stats.setText(f"Tổng ảnh: {event['total']} • Đã xử lý: {event['completed']+event['failed']+event['skipped']} • "
+            f"Thành công: {event['completed']} • Lỗi: {event['failed']} • Ảnh gốc dự phòng: {event.get('fallback_original', 0)} • "
             f"Bỏ qua: {event['skipped']}")
         fractional = event['index']-1 + event['percent']/100
         self.progress.setValue(int(1000*fractional/max(1, event['total'])))
@@ -567,6 +669,8 @@ class MainWindow(QMainWindow):
         if self.provider_paused and (not self.worker or not self.worker.isRunning()):
             self.start(list(self.provider_pending))
             return
+        if self.worker and not self.worker.isRunning() and self.resume_id and self.unfinished:
+            self.start(list(self.unfinished));return
         if self.worker:
             self.worker.control.resume()
             self.pause_button.setEnabled(True)
@@ -592,6 +696,8 @@ class MainWindow(QMainWindow):
         self.set_running(False)
         if self.provider_paused:
             self.continue_button.setEnabled(bool(self.provider_pending))
+        elif self.resume_id and self.unfinished:
+            self.continue_button.setEnabled(True)
 
     def inspect(self, row: int, column: int) -> None:
         path = next((p for p, r in self.rows.items() if r == row), None)
@@ -672,6 +778,7 @@ class MainWindow(QMainWindow):
 
     def restore_previous(self) -> None:
         if self.pending_options:
+            target_cache=self.pending_cache_path;target_run=self.pending_run_id
             from core.resume import PROVIDER_FIELDS
             selected = self.collect_options()
             restored = Options.from_dict(self.pending_options.to_dict())
@@ -701,6 +808,8 @@ class MainWindow(QMainWindow):
                 self.current.setText('Đã khôi phục phần còn dở. Chọn phương thức rồi bấm Tiếp tục; chưa gửi dữ liệu online.')
                 if self.pending_journal.get('state') == 'paused_provider':
                     self.provider_notice.show_saved_error()
+            self.active_cache_path=target_cache;self.active_run_id=target_run
+            self.cache_scope_label.setText('Run '+target_run[:12]+' • cache riêng đã khôi phục' if target_run else 'Cache chung • checkpoint đã khôi phục')
 
     def closeEvent(self, event) -> None:
         for panel in (self.image_panel, self.url_panel):

@@ -1,5 +1,48 @@
 # Báo cáo build — lượt tiếp tục 06/11/2026
 
+## GUI/cache release đã kiểm thử — 10/11/2026, 15:25 UTC
+
+EXE mới: `dist/ImageTranslatorVN-20261110T152147487436Z/ImageTranslatorVN-20261110T152147487436Z.exe`.
+20.012.162 byte; SHA256
+`ea95d7dd806469e848ed32f4ca49522bc1971161965cd2786fd0c877d51a1577`.
+Build.bat/PyInstaller exit 0, pip check PASS; log
+`logs/build-ImageTranslatorVN-20261110T152147487436Z.log`.
+Workpath riêng theo build name, giữ intermediates và mọi EXE cũ.
+
+Chính release này đã chạy Qt Windows GUI, DPI 100/125/150, popup/dialog,
+mở cache thật, backup/dọn scope run, normal/cache/fresh và cancel/reopen/
+resume bằng OCR/Argos thật. Source/EXE PNG cùng fixture giống hệt. Full
+regression 607 PASS/0 FAIL/12 SKIP. AGY 3 request hoàn tất (2 + 1 được cấp
+thêm), cuối 3/3 ảnh done. Gate GUI sớm được sửa trong QA; EXE bàn giao replay
+cache AGY thật PASS/idle và Offline fresh/cancel/reopen/resume PASS. Không gọi
+AGY thêm. 60 production module + main bytecode giống bản đã chạy AGY; lần
+đóng gói cuối chỉ cập nhật QA chờ completion và cache replay.
+
+Fingerprint khớp source tại `output/cache-ui-acceptance-20261110T140037Z/build-handoff.json`.
+Giữ `_internal`; fonts Windows và models ngoài EXE. Chưa nghiệm thu máy sạch.
+[Báo cáo và ảnh](docs/CACHE_UI_REPORT.md). Các mục dưới là lịch sử.
+
+## Bản mới đã kiểm thử thực tế — 10/11/2026, 12:05 UTC
+
+**ĐẠT nghiệm thu source và EXE trên bộ ảnh 0002/0003/0004.**
+EXE: `dist/ImageTranslatorVN-20261110T115939410209Z/ImageTranslatorVN-20261110T115939410209Z.exe`.
+19.980.822 byte, SHA256
+`aa5d262284b494dc3a9c296d0d73e16298384abfba55ebacab9d192159cebd7e`.
+Build hiện có bằng build.bat exit 0; pip check PASS. Log:
+`logs/build-ImageTranslatorVN-20261110T115939410209Z.log`.
+
+Đã chạy chính frozen EXE: GUI Qt Windows, chọn folder, worker OCR/AGY Batch
+và Whole thật, mỗi nhánh ba ảnh hoàn tất không fallback. Đã xem JPEG xuất ở
+kích thước đọc: không còn Chinese gây nhiễu, không chồng/cắt Việt. 10 ảnh cùng
+payload cho inpaint/final/layout giống hệt source. Regression 582 PASS,
+0 FAIL, 12 SKIP. Tổng AGY thật 4/6 gồm cả source, không retry vô hạn.
+
+Qt qwindows.dll có trong bundle; dùng Arial/Segoe UI Windows đã kiểm glyph,
+không phân phối font Microsoft; models ngoài EXE. Không bundle runtime cá nhân.
+Giữ nguyên bốn EXE cũ và `_internal`; chưa nghiệm thu portable trên máy sạch.
+Chi tiết và ảnh: [báo cáo nghiệm thu](docs/READABILITY_ACCEPTANCE_20261110.md).
+Evidence `output/acceptance-20261110T114108Z/`. Phần dưới là lịch sử.
+
 ## Sửa nhận diện AGY cần đăng nhập — 10/11/2026, 09:15 UTC
 
 Build mới thành công exit0, không chạy bộ test/GUI/dịch:

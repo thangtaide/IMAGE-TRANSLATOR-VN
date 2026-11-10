@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.pipeline import JobControl, NUMBER_PATTERN
 from core.storage import file_digest
@@ -47,7 +48,7 @@ class WholeChapterTests(unittest.TestCase):
         self.offline.stop(); self.temp.cleanup()
 
     def images(self, count):
-        for n in range(1, count+1): Image.new('RGB', (300, 150), (n, n, n)).save(self.source/f'{n:04d}.png')
+        for n in range(1, count+1): provider_page((300, 150),n).save(self.source/f'{n:04d}.png')
 
     def job(self, **kwargs):
         return WholeChapterJob(self.source, self.work, translator=self.adapter, ocr=self.ocr, **kwargs)
@@ -366,7 +367,7 @@ class WholeChapterQtTests(unittest.TestCase):
         app = QApplication.instance() or QApplication([])
         with tempfile.TemporaryDirectory(dir=ROOT/'output', prefix='stage3f-gui-') as folder:
             root = Path(folder); source = root/'source'; source.mkdir()
-            for n in range(1, 6): Image.new('RGB', (300, 150), (n,n,n)).save(source/f'{n:04d}.png')
+            for n in range(1, 6): provider_page((300, 150),n).save(source/f'{n:04d}.png')
             class SlowOCR(OCRFixture):
                 def recognize(self, *args):
                     time.sleep(.08)

@@ -1,5 +1,43 @@
 # E2E thực tế — 06/11/2026
 
+## Cache/fresh/reopen trong source và EXE — 10/11/2026, 15:25 UTC
+
+Source và release frozen EXE PASS normal → cache hit → fresh DB, có OCR/MT
+Offline thật; fresh không đọc DB cũ, old DB/output giữ nguyên. Hủy sau OCR
+thật rồi mở lại GUI/khôi phục/tiếp tục: cùng namespace, OCR cache hit của
+chính run, dịch/render thật hoàn tất. PNG cùng fixture source/EXE giống hệt.
+GUI backup và dọn OCR/translation scope selected run PASS, giữ journal/receipts.
+
+AGY thật hai request trên 0003 PASS (normal 1, cached 0, fresh 1); sau khi
+được cho phép thêm, request thứ 3 hoàn tất 0002–0004 trên production code cuối.
+Gate nút GUI của QA kiểm trước queued finished báo FAIL; giữ nguyên báo cáo
+gốc. QA sửa cách chờ, EXE cuối replay cache thật PASS/idle không thêm request,
+và Offline fresh/cancel/reopen/resume PASS. Production 60 module + main
+bytecode giống bản chạy AGY, chỉ QA đổi ở lần đóng gói cuối. Không tuyên bố
+website live. Full release: 607 PASS/0 FAIL/12 SKIP.
+
+Evidence `output/cache-ui-acceptance-20261110T140037Z/`: `exe-pipeline` (AGY),
+`exe-batch` (3 ảnh AGY, gate sớm FAIL), `source-release-pipeline3`,
+`exe-handoff-offline`, `exe-handoff-cached-agy`, `equivalence.json`.
+[Báo cáo đầy đủ](docs/CACHE_UI_REPORT.md).
+
+## Nghiệm thu AGY source và frozen EXE — 10/11/2026
+
+**PASS** pipeline OCR → AGY → mask/inpaint → layout → render → export với
+0002/0003/0004 thật của Chap 20. Source GUI Batch, Source Whole, EXE GUI Batch
+và EXE Whole đều hoàn tất 3/3, 0 failed/fallback. Bốn request AGY thật, còn 2/6.
+Không dùng provider mock hoặc cache translation để gọi lượt real này là PASS.
+Đã xem JPEG xuất bởi EXE 1280×720; nét Trung cũ không còn gây nhiễu, Việt không
+chồng/cắt. Có vệt nền tại dải chữ, không yêu cầu phục chế hoàn hảo.
+
+Lượt cached riêng kiểm tra 10 ảnh; source/EXE inpaint/final/layout giống hệt,
+0 inference. Unit/regression được báo tách biệt: 582 PASS/0 FAIL/12 SKIP.
+Evidence: `output/acceptance-20261110T114108Z/`; xem
+[báo cáo nghiệm thu và giới hạn](docs/READABILITY_ACCEPTANCE_20261110.md).
+Một chuẩn bị Whole đầu tiên bị guard confirmation chặn trước transport;
+driver đã sửa đi đúng prepare/confirm/run và giữ báo cáo FAIL đầu tiên.
+Không tuyên bố kiểm chứng website live, màn hình vật lý hoặc máy sạch.
+
 ## Mới nhất 07/11/2026 — GUI tab và EXE mới
 
 Source E2E chuẩn PASS tại `output/e2e-validation/20261107T045351Z-fd62c9/`.

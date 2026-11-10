@@ -8,6 +8,7 @@ from unittest.mock import patch
 from dataclasses import replace
 
 from PIL import Image
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.pipeline import JobControl, ProcessingManager, TranslationService
 from core.storage import TranslationCache, file_digest
@@ -74,7 +75,7 @@ class MultiPageResumeTests(unittest.TestCase):
         self.ocr_calls = []
         self.page_texts = {n: [f'你好 {n}'] for n in (1, 2, 3)}
         for n in self.page_texts:
-            Image.new('RGB', (500, 300), (n, n, n)).save(self.source / f'{n}.png')
+            provider_page((500, 300),n).save(self.source / f'{n}.png')
         owner = self
         class OCR:
             def identity(self, language): return 'ocr-stage3c-fixture'
@@ -530,7 +531,7 @@ def process_case(folder, phase):
     source = folder/'source'
     source.mkdir(exist_ok=True)
     if phase == 'first':
-        for n in (1, 2, 3): Image.new('RGB', (500, 300), (n,n,n)).save(source/f'{n}.png')
+        for n in (1, 2, 3): provider_page((500, 300),n).save(source/f'{n}.png')
     calls = []
     class OCR:
         def identity(self, language): return 'fresh-fixture'

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image
+from tests.image_fixtures import provider_page
 from core.paths import ROOT
 from core.pipeline import JobControl, ProcessingManager, TranslationService
 from core.storage import TranslationCache, file_digest
@@ -104,7 +105,7 @@ class DiagnosticPipelineTests(unittest.TestCase):
         self.runner=RunnerFixture()
         self.ext=patch('providers.agy.check_automatic_extensions');self.ext.start()
         self.source=self.root/'source';self.source.mkdir()
-        for n in (1,2,3):Image.new('RGB',(260,150),(n,n,n)).save(self.source/f'{n}.png')
+        for n in (1,2,3):provider_page((260,150),n).save(self.source/f'{n}.png')
 
     def tearDown(self):
         self.ext.stop();self.cache.close();self.tmp.cleanup()

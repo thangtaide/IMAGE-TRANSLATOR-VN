@@ -54,9 +54,9 @@ def schedule(window, app, path: Path) -> None:
         step('vietnamese_font_glyphs', lambda: require(window.font_report['status']=='PASS', 'Vietnamese glyphs missing'))
         step('main_window_visible', lambda: require(window.isVisible(), 'MainWindow not visible'))
         def modes():
-            for mode in ['Online', 'Offline', 'Auto Fallback']:
-                window.mode.setCurrentText(mode)
-                require(window.mode.currentText()==mode, 'Cannot select mode')
+            for mode in ['Online Free', 'Offline', 'Auto Fallback']:
+                window.mode.setCurrentIndex(window.mode.findData(mode))
+                require(window.mode.currentData()==mode, 'Cannot select mode')
             window.mode.setCurrentText('Offline')
             require(not window.online_provider.isEnabled(), 'Online provider enabled in Offline mode')
         step('select_modes', modes)

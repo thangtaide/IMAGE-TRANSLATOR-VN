@@ -9,6 +9,14 @@ from core.storage import configure_logging
 def main() -> int:
     initialize()
     configure_logging()
+    if '--cache-ui-check' in sys.argv:
+        sys.argv.remove('--cache-ui-check')
+        from scripts.validate_cache_ui import main as cache_ui_main
+        return cache_ui_main()
+    if '--acceptance-check' in sys.argv:
+        sys.argv.remove('--acceptance-check')
+        from scripts.acceptance_readability import main as acceptance_main
+        return acceptance_main()
     if '--validate-source-tabs' in sys.argv:
         sys.argv.remove('--validate-source-tabs')
         from scripts.validate_source_tabs import main as validate_source_tabs
