@@ -157,15 +157,15 @@ class MultiPageResumeTests(unittest.TestCase):
                 self.assertEqual(len(result['pending_paths']), 3)
                 self.assertEqual(len(self.runner.calls)-before, 1)
 
-    def test_numeric_rejection_is_page_local_and_valid_regions_persist(self):
+    def test_online_numeric_content_is_accepted_for_every_page(self):
         self.page_texts[2] = ['你好 2', '你好 22']
         self.runner.transform = lambda text: text.replace('你好', 'Xin chào').replace('22', '23')
         m = self.manager(); result = m.run()
-        self.assertEqual((result['completed'], result['fallback_original']), (2, 1))
-        self.assertEqual(len(m.journal['regions']), 3)  # 4 regions minus rejected one.
-        bad = self.cache.item(m.job_id, str(self.source/'2.png'))
-        self.assertEqual(bad['status'], 'fallback_original')
-        self.assertEqual(file_digest(Path(bad['output'])), file_digest(self.source/'2.png'))
+        self.assertEqual((result['completed'], result['fallback_original']), (3, 0))
+        self.assertEqual(len(m.journal['regions']), 4)
+        item = self.cache.item(m.job_id, str(self.source/'2.png'))
+        self.assertEqual(item['status'], 'done')
+        self.assertEqual(self.cache.get('metadata',item['fingerprint'])['translations'],['Xin chào 2','Xin chào 23'])
 
     def test_quota_restart_switch_offline_only_pending_and_no_new_ocr(self):
         def quota(argv, payload, *args):
@@ -294,12 +294,13 @@ class MultiPageResumeTests(unittest.TestCase):
         self.assertEqual(file_digest(original), checksum)
         self.assertFalse(self.ocr_calls)
 
-    def test_context_excludes_numerically_rejected_translation(self):
+    def test_context_includes_online_translations_without_numeric_revalidation(self):
         self.runner.transform = lambda text: text.replace('你好', 'Xin chào').replace('1', '999')
         result = self.manager(self.options(agy_batch_regions=1)).run()
-        self.assertEqual(result['fallback_original'], 1)
+        self.assertEqual(result['fallback_original'], 0)
         second = json.loads(json.loads(self.runner.calls[1][1])['message']['content'])
-        self.assertEqual(second['reference_only'], [])
+        self.assertTrue(second['reference_only'])
+        self.assertIn('999',json.dumps(second['reference_only']))
 
     def test_completed_output_tamper_fails_closed_before_translation(self):
         m = self.manager(); m.run()

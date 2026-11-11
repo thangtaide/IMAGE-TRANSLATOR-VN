@@ -50,7 +50,8 @@ class Options:
     reading_direction: str = "ltr"
     diagnostic_text: bool = True
     agy_executable: str = ''
-    agy_model: str = 'gemini-3.8-flash-medium'
+    agy_model: str = 'gemini-3.8-flash-low'
+    agy_effort: str = ''  # Legacy empty: infer Gemini from exact ID; other models use model default.
     agy_timeout: int = 300
     agy_max_requests: int = 64
     agy_batch_chars: int = 3000

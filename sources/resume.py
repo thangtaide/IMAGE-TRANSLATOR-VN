@@ -60,6 +60,8 @@ def restore_source_request(data, database, options):
     merged = Options.from_dict(data['options'])
     for name in PROVIDER_FIELDS:
         setattr(merged, name, getattr(options, name))
+    from providers.agy_models import bind_run_model
+    bind_run_model(merged,data['options'])
     from sources.registry import resolve_adapter
     adapter = resolve_adapter(comic.source_url) if comic.site_id != 'local' else None
     return dict(comic=comic, chapters=chapters, output=Path(data['output']), options=merged,

@@ -17,7 +17,7 @@ FIXTURE=json.loads((Path(__file__).parent/'fixtures/selective_numeric_layout.jso
 
 class SelectiveNumericTests(WorkspaceCase):
     def test_real_failure_shapes_and_true_mismatches(self):
-        provider=Mock(online=True,identity='SYNTHETIC-NO-TRANSPORT',engine_name='fixture')
+        provider=Mock(online=False,identity='SYNTHETIC-NO-TRANSPORT',engine_name='fixture')
         provider.translate.side_effect=AssertionError('Network/provider must not run')
         service=TranslationService(self.options(),self.cache,JobControl())
         for i,case in enumerate(FIXTURE['numeric']):
@@ -29,7 +29,7 @@ class SelectiveNumericTests(WorkspaceCase):
         provider.translate.assert_not_called()
 
     def test_legacy_percent_cache_cannot_bypass_missing_unit_protection(self):
-        provider=Mock(online=True,identity='fixture-percent')
+        provider=Mock(online=False,identity='fixture-percent')
         source='百分之20';context='old'
         key=digest([source,'zh','vi',provider.identity,{},context,'glossary-v3-literal-numbers'])
         self.cache.put('translation',key,'20')
@@ -39,7 +39,7 @@ class SelectiveNumericTests(WorkspaceCase):
         self.assertEqual(self.cache.get('translation',key),'20');provider.translate.assert_not_called()
 
     def test_plain_number_cache_and_signed_guards_remain_unchanged(self):
-        provider=Mock(online=True,identity='fixture-normal')
+        provider=Mock(online=False,identity='fixture-normal')
         key=digest(['第14话','zh','vi',provider.identity,{},'normal','glossary-v3-literal-numbers'])
         self.cache.put('translation',key,'Chương 14')
         service=TranslationService(self.options(),self.cache,JobControl())

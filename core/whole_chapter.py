@@ -144,12 +144,15 @@ class AGYWholeChapterTranslator:
         self.path = find_agy(options.agy_executable)  # File lookup/hash only; never runs the executable.
         self.binary_hash = file_digest(self.path)
         self.model, self.timeout = options.agy_model, timeout
+        from providers.agy_models import selection
+        try:_,self.effort=selection(self.model,options.agy_effort)
+        except ValueError as exc:raise ChapterError('AGY_MODEL') from exc
         self.identity = 'whole-agy-v1:' + digest([self.binary_hash, self.model,
             WHOLE_PROMPT_VERSION, SESSION_SETTINGS, VALIDATOR_VERSION, 'region_id-translated_text-v1'])
         self.provider = _GuardIdentity(self.identity)
         self.provider.engine_name = 'AGY Gemini whole chapter'
         self.provider.online = True  # Diagnostic identity only; generation goes through translate_manifest.
-        self.descriptor = dict(kind='agy', executable=str(self.path), model=self.model, timeout=timeout)
+        self.descriptor = dict(kind='agy', executable=str(self.path), model=self.model, effort=self.effort or '',timeout=timeout)
         self.error_context = {}
         self.last_capture = None
 
@@ -163,6 +166,7 @@ class AGYWholeChapterTranslator:
         packet = dict(schema_version=1, chapter_id=manifest['chapter_id'],
                       manifest_hash=manifest['content_hash'], pages=pages)
         provider = AGYProvider(str(self.path), model=self.model, timeout=min(300, self.timeout),
+            effort=self.effort or '',
             max_requests=1, checkpoint=control.checkpoint, cancelled=lambda:control.cancelled,
             root=workspace/'agy', probe_cli=False, error_context=self.error_context)
         try:
@@ -238,6 +242,15 @@ class WholeChapterJob:
         self.path = self.workspace / 'chapter-journal.json'
         self.manifest_path = self.workspace / 'chapter-ocr-manifest.json'
         self.accepted_path = self.workspace / 'validated-translations.json'
+        if self.path.exists() and isinstance(self.translator,AGYWholeChapterTranslator):
+            saved=verify(read_json(self.path))
+            descriptor=saved.get('translator',{})
+            if descriptor.get('kind')=='agy':
+                pinned=(descriptor['model'],descriptor.get('effort',''))
+                if (self.options.agy_model,self.options.agy_effort)!=pinned:
+                    self.options=replace(self.options,agy_model=pinned[0],agy_effort=pinned[1],
+                        agy_executable=descriptor['executable'])
+                    self.translator=AGYWholeChapterTranslator(self.options,descriptor['timeout'])
         self.record = None
         self.validated_regions = 0
 

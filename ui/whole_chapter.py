@@ -240,6 +240,7 @@ class WholeChapterDialog(QDialog):
             self.translator.setCurrentIndex(self.translator.findData(kind))
             if kind == 'agy':
                 self.options.agy_executable = descriptor['executable']; self.options.agy_model = descriptor['model']
+                self.options.agy_effort = descriptor.get('effort','')
                 self.timeout.setValue(descriptor['timeout']); self.change_translator()
             if not self.bound_context: self.source.setText(data['source'])
             self.input_paths = (tuple(Path(data['source'])/p['relative'] for p in data['pages'])

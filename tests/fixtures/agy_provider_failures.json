@@ -1,0 +1,13 @@
+{
+  "kind": "SANITIZED_MANUAL_REPRO_NOT_RAW_STREAM",
+  "server_shutdown": {
+    "exit_code": 3,
+    "result": {"status":"ERROR","finished_reason":"error","num_turns":1,"response":"","error":"agent executor error: stream reading error: http2: server sent GOAWAY and closed the connection; ErrCode=NO_ERROR, debug=\"server_shutting_down\""},
+    "expected": "NETWORK_ERROR"
+  },
+  "content_filter": {
+    "exit_code": 0,
+    "result": {"status":"ERROR","finished_reason":"error","num_turns":2,"response":"An incomplete answer, not translation JSON.","structured_output":{"translations":[{"id":"r0","text":"Synthetic candidate"}]},"error":"Your previous response was blocked by content safety filters: The model output could not be generated. Retries remaining: 2"},
+    "expected": "RESPONSE_BLOCKED"
+  }
+}

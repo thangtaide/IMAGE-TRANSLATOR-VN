@@ -1,0 +1,13 @@
+{
+  "kind": "SANITIZED_MANUAL_REPRO_FROM_PAGE67_DIAGNOSTICS_NOT_RAW_STREAM",
+  "exit_code": 3,
+  "stdout": {
+    "event": "result",
+    "result": {
+      "status": "ERROR",
+      "finished_reason": "error",
+      "error": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 1h2m3s."
+    }
+  },
+  "stderr": "error: Individual quota reached.\nAGY_ERROR: {\"short_error\":\"RESOURCE_EXHAUSTED (code 429): Individual quota reached.\",\"status\":\"RESOURCE_EXHAUSTED\",\"error_code\":429,\"code_kind\":\"http\",\"retryable\":true}\n"
+}

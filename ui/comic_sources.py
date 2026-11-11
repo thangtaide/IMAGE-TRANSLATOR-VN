@@ -957,7 +957,7 @@ class ComicSourcesPanel(QWidget):
             self.begin()
             return
         if self.provider_paused and not self.busy:
-            if self.fresh_source_active:
+            if self.fresh_source_active or self.source_resume_id:
                 self.restore_cached_job()
                 return
             chapters = [c for c in self.chapters if c.chapter_id == self.paused_chapter]

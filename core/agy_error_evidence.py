@@ -25,6 +25,7 @@ STDOUT_LIMIT, STDERR_LIMIT = 1_000_000, 64_000
 _lock = threading.Lock()
 SOURCES = {'APP_PREFLIGHT', 'CLI_START', 'CLI_TIMEOUT', 'CLI_EXIT', 'CLI_RESPONSE', 'PARSER', 'VALIDATION', 'UNKNOWN'}
 ERROR_CODES = {'UNKNOWN','CANCELLED','AGY_MODEL','AGY_NOT_FOUND','AGY_CAPABILITY','AGY_AUTOMATIC_EXTENSIONS',
+    'NETWORK_ERROR','RESPONSE_BLOCKED',
     'AGY_INITIALIZATION_ERROR','AGY_START_FAILED','INVALID_REQUEST','AUTH_REQUIRED','ACCESS_DENIED',
     'MODEL_UNAVAILABLE','QUOTA_EXCEEDED','RATE_LIMITED','TIMEOUT','INVALID_RESPONSE','EMPTY_RESPONSE',
     'CLI_EXIT_ERROR','AGY_PROCESS_CLEANUP','PROVIDER_UNAVAILABLE','REQUEST_LIMIT','WHOLE_COMMAND_LIMIT','WHOLE_PAYLOAD_LIMIT',
@@ -119,7 +120,8 @@ def _budget_lock(root):
 class AGYErrorCapture:
     def __init__(self, model='', timeout=None, context=None, payload=None):
         self.attempt_id = uuid4().hex
-        self.model = model if isinstance(model, str) and re.fullmatch(r'gemini-[A-Za-z0-9.-]{1,100}', model) else 'unknown'
+        from providers.agy_models import MODEL_IDS
+        self.model = model if isinstance(model,str) and model in MODEL_IDS else 'unknown'
         self.timeout, self.context = timeout, dict(context or {})
         self.payload_hash = hashlib.sha256(payload).hexdigest() if isinstance(payload, bytes) else None
         self.started_at = time.monotonic()
@@ -203,6 +205,7 @@ class AGYErrorCapture:
             state = 'RESPONSE_BYTES_OBSERVED' if self.stdout else 'PROCESS_STARTED' if self.started else 'NOT_ATTEMPTED' if self.started is False else 'UNKNOWN'
             metadata = dict(version=1, timestamp=datetime.now(timezone.utc).isoformat(), attempt_id=self.attempt_id,
                 provider='AGY', model=self.model,
+                effort=context.get('agy_effort') if context.get('agy_effort') in ('low','medium','high','default') else None,
                 error_code=getattr(exc,'code',None) if getattr(exc,'code',None) in ERROR_CODES else 'CANCELLED' if type(exc).__name__=='CancelledError' else 'UNKNOWN',
                 error_source=source if source in SOURCES else 'UNKNOWN', error_category=source if source in SOURCES else 'UNKNOWN',
                 job_id=_identifier(context.get('job_id')), chapter_id=_identifier(context.get('chapter_id')) or

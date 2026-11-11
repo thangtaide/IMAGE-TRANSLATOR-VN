@@ -14,7 +14,7 @@ from core.paths import ASSETS
 from core.types import LayoutError, OCRResult, Options
 
 SUPPORTED = {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}
-IMAGING_REVISION = 'readable-outline-layout-v4'
+IMAGING_REVISION = 'readable-outline-layout-v5-corner-trim'
 
 
 class TextRemovalError(ValueError):
@@ -193,6 +193,78 @@ class TextRenderer:
     def _intersects(a, b):
         return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
+    def _fit_text(self, text, width, height, draw, *, minimum_only=False):
+        sizes = (self.options.font_min,) if minimum_only else range(
+            self.options.font_max, self.options.font_min-1, -1)
+        for size in sizes:
+            font = ImageFont.truetype(str(self.font_path), size)
+            wrapped = self._wrap(text, font, width, draw)
+            if wrapped is None:
+                continue
+            spacing = max(0, min(self.options.line_spacing, size // 4))
+            bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=spacing,
+                                          align=self.options.alignment, stroke_width=self.options.stroke)
+            if bbox[2]-bbox[0] <= width and bbox[3]-bbox[1] <= height:
+                return font, wrapped, spacing, bbox
+        return None
+
+    def _separate_sparse_corners(self, group, regions, translations, image_size, draw):
+        """Recover only small corner collisions within the original OCR boxes.
+
+        No expansion or text changes. Keep at least 85% of each box, move an
+        edge at most 8px, and require every complete target to fit at font_min.
+        Dense/valid groups never enter this fallback; complex overlaps fail.
+        """
+        indices = sorted(group['indices'])
+        if not 2 <= len(indices) <= 8:
+            return None
+        originals = [[max(0, regions[i].box[0]), max(0, regions[i].box[1]),
+                      min(image_size[0], regions[i].box[2]), min(image_size[1], regions[i].box[3])]
+                     for i in indices]
+        boxes = [box.copy() for box in originals]
+        for i, a in enumerate(boxes):
+            for j in range(i+1, len(boxes)):
+                b = boxes[j]
+                if not self._intersects(a, b):
+                    continue
+                cross_x = a[0] < b[0] < a[2] < b[2] or b[0] < a[0] < b[2] < a[2]
+                cross_y = a[1] < b[1] < a[3] < b[3] or b[1] < a[1] < b[3] < a[3]
+                overlap = (min(a[2], b[2])-max(a[0], b[0])) * (min(a[3], b[3])-max(a[1], b[1]))
+                area_a, area_b = (a[2]-a[0])*(a[3]-a[1]), (b[2]-b[0])*(b[3]-b[1])
+                if not (cross_x and cross_y) or overlap > .08*min(area_a, area_b):
+                    return None
+                candidates = []
+                for n, other in ((i, b), (j, a)):
+                    box, original = boxes[n], originals[n]
+                    original_area = (original[2]-original[0])*(original[3]-original[1])
+                    for axis in (0, 1):
+                        candidate = box.copy()
+                        edge = axis+2 if box[axis] < other[axis] else axis
+                        candidate[edge] = other[axis] if edge == axis+2 else other[axis+2]
+                        width, height = candidate[2]-candidate[0], candidate[3]-candidate[1]
+                        loss = 1-width*height/original_area
+                        if (width <= 0 or height <= 0 or loss > .15
+                                or max(abs(x-y) for x, y in zip(candidate, original)) > 8
+                                or self._intersects(candidate, other)):
+                            continue
+                        if self._fit_text(translations[indices[n]].strip(), width, height,
+                                          draw, minimum_only=True) is not None:
+                            candidates.append((loss, n, axis, candidate))
+                if not candidates:
+                    return None
+                _, n, _, candidate = min(candidates)
+                boxes[n][:] = candidate
+        result = []
+        for index, box, original in zip(indices, boxes, originals):
+            if self._fit_text(translations[index].strip(), box[2]-box[0], box[3]-box[1],
+                              draw, minimum_only=True) is None:
+                return None
+            item = dict(indices=[index], box=box)
+            if box != original:
+                item.update(source_box=original, layout_strategy='corner-overlap-trim')
+            result.append(item)
+        return result
+
     def plan_layout(self, image_size, regions, translations):
         """Resolve intersecting OCR boxes before drawing any text.
 
@@ -235,28 +307,29 @@ class TextRenderer:
                         break
                 if changed:
                     break
+        # Only groups that would previously fail the sparse-area guard may be
+        # separated. Do not change existing accepted dense-group layouts.
+        resolved = []
+        for group in groups:
+            indices = group['indices']
+            x0,y0,x1,y1 = group['box']
+            occupied = sum(max(0,min(image_size[0],regions[i].box[2])-max(0,regions[i].box[0])) *
+                           max(0,min(image_size[1],regions[i].box[3])-max(0,regions[i].box[1])) for i in indices)
+            if len(indices) > 1 and occupied < (x1-x0)*(y1-y0)*.6:
+                separated = self._separate_sparse_corners(group, regions, translations, image_size, draw)
+                if separated is None:
+                    raise TextLayoutError('LAYOUT_UNFIT: nhóm box tạo vùng trống quá lớn; không mở chữ qua vùng hình quan trọng')
+                resolved.extend(separated)
+            else:
+                resolved.append(group)
+        groups = resolved
         plans = []
         for group in groups:
             indices = sorted(group['indices'])
             text = '  '.join(translations[index].strip() for index in indices)
             x0,y0,x1,y1 = group['box']
             width, height = x1-x0, y1-y0
-            occupied = sum(max(0,min(image_size[0],regions[i].box[2])-max(0,regions[i].box[0])) *
-                           max(0,min(image_size[1],regions[i].box[3])-max(0,regions[i].box[1])) for i in indices)
-            if len(indices) > 1 and occupied < width*height*.6:
-                raise TextLayoutError('LAYOUT_UNFIT: nhóm box tạo vùng trống quá lớn; không mở chữ qua vùng hình quan trọng')
-            fit = None
-            for size in range(self.options.font_max, self.options.font_min-1, -1):
-                font = ImageFont.truetype(str(self.font_path), size)
-                wrapped = self._wrap(text, font, width, draw)
-                if wrapped is None:
-                    continue
-                spacing = max(0, min(self.options.line_spacing, size // 4))
-                bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=spacing,
-                                              align=self.options.alignment, stroke_width=self.options.stroke)
-                if bbox[2]-bbox[0] <= width and bbox[3]-bbox[1] <= height:
-                    fit = font, wrapped, spacing, bbox
-                    break
+            fit = self._fit_text(text, width, height, draw)
             if fit is None:
                 # A small unchanged Latin identifier can be wider than its tight
                 # OCR box at the configured minimum. Add only local horizontal
@@ -286,6 +359,8 @@ class TextRenderer:
             plans.append(dict(region_indices=indices, duplicate_indices=[i for i,v in duplicates.items() if v in indices],
                 box=[x0,y0,x1,y1],paint_box=[x+bbox[0],y+bbox[1],x+bbox[2],y+bbox[3]],
                 text=text,wrapped=wrapped,font_size=font.size,spacing=spacing,origin=[x,y]))
+            if 'layout_strategy' in group:
+                plans[-1].update(source_box=group['source_box'], layout_strategy=group['layout_strategy'])
             if [x0,y0,x1,y1] != group['box']:
                 plans[-1].update(source_box=group['box'],layout_strategy='verbatim-ascii-local-padding')
         for i,plan in enumerate(plans):

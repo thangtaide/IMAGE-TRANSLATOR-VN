@@ -12,7 +12,7 @@ from core.storage import digest, file_digest
 from core.types import Options
 
 PROVIDER_FIELDS = {'mode', 'online_provider', 'offline_provider', 'allow_online_fallback',
-    'endpoint', 'skip_success', 'diagnostic_text', 'agy_executable', 'agy_model',
+    'endpoint', 'skip_success', 'diagnostic_text', 'agy_executable', 'agy_model', 'agy_effort',
     'agy_timeout', 'agy_max_requests', 'agy_batch_chars', 'agy_batch_regions', 'agy_context',
     'gemini_api_model', 'gemini_api_timeout', 'gemini_api_max_requests', 'gemini_api_free_tier_confirmed'}
 

@@ -19,6 +19,7 @@ from providers.base import TranslationProvider
 from providers.online import OnlineProviderError, ProviderSuspended
 from providers.agy_diagnostics import observe, transport, sanitize
 from core.agy_error_evidence import AGYErrorCapture
+from providers.agy_models import selection
 
 MODE = 'AI Gemini AGY'
 WHOLE_MODE = 'AI Gemini AGY Whole Chapter'  # UI routing only; never the Batch/Auto Fallback route.
@@ -381,7 +382,19 @@ def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: in
             error = result.get('error')
             code = error.get('code') if isinstance(error, dict) else None
             text = str(error).upper()
-            if code in ('QUOTA_EXCEEDED', 'RESOURCE_EXHAUSTED') or 'RESOURCE_EXHAUSTED' in text or 'QUOTA_EXCEEDED' in text:
+            if 'BLOCKED BY CONTENT SAFETY FILTERS' in text:
+                raise ProviderSuspended('RESPONSE_BLOCKED',
+                    'AGY báo phản hồi bị bộ lọc nội dung của nhà cung cấp chặn; giữ pending. '
+                    'Không tự gửi lại batch hoặc dùng bản trả về lỗi làm kết quả thành công.')
+            if 'HTTP2:' in text and 'GOAWAY' in text:
+                raise ProviderSuspended('NETWORK_ERROR',
+                    'AGY báo máy chủ đóng luồng HTTP/2 (GOAWAY); batch chưa hoàn tất. '
+                    'Giữ checkpoint, không tự retry hoặc đổi provider.')
+            # CLI 1.5.5 can flatten RESOURCE_EXHAUSTED into a plain terminal
+            # error string. This explicit account-quota signal is not a generic
+            # HTTP 429/rate limit, and must retain the suspension/no-retry policy.
+            if (code in ('QUOTA_EXCEEDED', 'RESOURCE_EXHAUSTED') or 'RESOURCE_EXHAUSTED' in text
+                    or 'QUOTA_EXCEEDED' in text or 'INDIVIDUAL QUOTA REACHED' in text):
                 raise ProviderSuspended('QUOTA_EXCEEDED', 'AGY báo hết hạn mức tài khoản; đã tạm dừng, không dùng credits/API khác.')
             if code in ('RATE_LIMITED', 429) or 'RATE_LIMIT' in text:
                 raise ProviderSuspended('RATE_LIMITED', 'AGY báo giới hạn tốc độ; thời điểm khôi phục chưa xác định.')
@@ -394,7 +407,7 @@ def _parse_response_legacy(stdout: bytes, expected_ids: list[str], exit_code: in
                     'Ứng dụng không tự đăng nhập, retry hoặc chuyển API key.')
             if whole and code in ('PERMISSION_DENIED', 'ACCESS_DENIED', 403):
                 raise ProviderSuspended('ACCESS_DENIED', 'AGY từ chối quyền truy cập; không tự thử lại.')
-            if whole and code in ('MODEL_UNAVAILABLE', 'MODEL_NOT_FOUND', 'NOT_FOUND', 404):
+            if code in ('MODEL_UNAVAILABLE', 'MODEL_NOT_FOUND', 'NOT_FOUND', 404):
                 raise ProviderSuspended('MODEL_UNAVAILABLE', 'AGY không cung cấp model đã chọn; không tự đổi model.')
             raise OnlineProviderError('PROVIDER_UNAVAILABLE', 'AGY không hoàn tất batch. Không tự retry hoặc đổi model.')
         if result.get('num_turns', 1) != 1:
@@ -490,15 +503,15 @@ def parse_response(stdout: bytes, expected_ids: list[str], exit_code: int, *,
 class AGYProvider(TranslationProvider):
     online, engine_name, retry_count = True, 'AGY Gemini', 0
 
-    def __init__(self, executable: str = '', model: str = 'gemini-3.8-flash-medium', timeout: int = 300,
+    def __init__(self, executable: str = '', model: str = 'gemini-3.8-flash-low', timeout: int = 300,
                  max_requests: int = 64, checkpoint: Callable = lambda: None,
                  cancelled: Callable[[], bool] = lambda: False, root: Path | None = None, runner=run_bounded,
-                 probe_cli: bool = True, error_context: dict | None = None):
+                 probe_cli: bool = True, error_context: dict | None = None, effort: str = ''):
         self.error_context = dict(error_context or {})
         self.error_captures = []
         self.last_capture = AGYErrorCapture(model, self.error_context.get('configured_timeout', timeout), self.error_context)
         try:
-            self._initialize(executable, model, timeout, max_requests, checkpoint, cancelled, root, runner, probe_cli)
+            self._initialize(executable, model, timeout, max_requests, checkpoint, cancelled, root, runner, probe_cli, effort)
         except (OnlineProviderError, OSError, ValueError, TypeError) as exc:
             # Known AGY factory boundary only. Other engines/page errors retain their policy.
             code = getattr(exc, 'code', None) or 'AGY_INITIALIZATION_ERROR'
@@ -514,14 +527,16 @@ class AGYProvider(TranslationProvider):
             self.record_failure(exc, 'UNKNOWN')
             raise
 
-    def _initialize(self, executable, model, timeout, max_requests, checkpoint, cancelled, root, runner, probe_cli):
-        if not model.startswith('gemini-') or not model.replace('-', '').replace('.', '').isalnum():
-            raise OnlineProviderError('AGY_MODEL', 'Chọn model slug Gemini đã có trong agy models; không tự chuyển model khác.')
+    def _initialize(self, executable, model, timeout, max_requests, checkpoint, cancelled, root, runner, probe_cli, effort):
+        try:
+            choice,effective=selection(model,effort)
+        except ValueError as exc:
+            raise OnlineProviderError('AGY_MODEL',str(exc)) from None
         if not 10 <= timeout <= 300 or not 1 <= max_requests <= 128:
             raise ValueError('Giới hạn AGY không hợp lệ')
         self.path, self.model = find_agy(executable), model
-        suffix = model.rsplit('-', 1)[-1]
-        self.effort = suffix if suffix in ('low', 'medium', 'high', 'xhigh', 'max') else 'medium'
+        self.effort = effective
+        self.error_context['agy_effort']=effective or 'default'
         check_automatic_extensions()
         self.timeout, self.max_requests, self.requests_sent = timeout, max_requests, 0
         self.checkpoint, self.cancelled, self.runner = checkpoint, cancelled, runner
@@ -579,7 +594,8 @@ class AGYProvider(TranslationProvider):
         if self.last_capture.started is False:
             return 'CLI_START' if self.last_capture.context.get('invocation_kind') in ('HELP','VERSION','TRANSLATION') else 'APP_PREFLIGHT'
         if self.last_capture.exit_code not in (None, 0): return 'CLI_EXIT'
-        if getattr(exc,'code',None) in ('QUOTA_EXCEEDED','RATE_LIMITED','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE'):
+        if getattr(exc,'code',None) in ('QUOTA_EXCEEDED','RATE_LIMITED','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE',
+                                       'RESPONSE_BLOCKED','NETWORK_ERROR'):
             return 'CLI_RESPONSE'
         return 'CLI_RESPONSE' if initialization else 'PARSER'
 
@@ -655,10 +671,12 @@ class AGYProvider(TranslationProvider):
         return translated
 
     def command(self, ids, timeout, *, whole=False):
-        return [str(self.path), '--input-format', 'stream-json', '--output-format', 'stream-json',
+        args = [str(self.path), '--input-format', 'stream-json', '--output-format', 'stream-json',
             '--json-schema', json.dumps(output_schema(ids, whole=whole), separators=(',', ':')),
-            '--model', self.model, '--effort', self.effort, '--disable-slash-commands', '--sandbox',
+            '--model', self.model, '--disable-slash-commands', '--sandbox',
             '--print-timeout', str(timeout)+'s', '--settings', json.dumps(SESSION_SETTINGS), '--log-file', os.devnull]
+        if self.effort:args += ['--effort',self.effort]
+        return args
 
     def _run_translation(self, payload, ids, *, timeout=None, whole=False):
         if self.blocked:
@@ -749,7 +767,7 @@ class AGYProvider(TranslationProvider):
     def _diagnostic(self, data):
         data = dict(data or transport('OTHER_ERROR'))
         data.update(request_number=self.requests_sent, cli_version=self.version,
-                    model_identity_hash=digest(self.identity))
+                    model_identity_hash=digest(self.identity),model=self.model,effort=self.effort or 'default')
         return sanitize(data)
 
     def translate(self, text: str, source: str, target: str = 'vi') -> str:

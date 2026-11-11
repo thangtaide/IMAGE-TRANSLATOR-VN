@@ -1,7 +1,8 @@
 """Explicit source/frozen cache/UI acceptance; real pipelines, bounded AGY transport.
 
 All writes and confirmed cleanup target the requested new acceptance directory.
-No responses, OCR or targets are supplied by this driver.
+Pipeline runs use real inference. The GUI-only policy smoke uses explicit local
+target fixtures and never invokes model transport.
 """
 from __future__ import annotations
 import argparse
@@ -18,6 +19,46 @@ from core.storage import atomic_json,file_digest
 
 
 def read(path):return json.loads(path.read_text(encoding='utf-8'))
+
+
+def online_policy_smoke(folder):
+    """Exercise the actual source/frozen guard and configured CLI flags locally."""
+    from types import SimpleNamespace
+    from core.storage import load_options
+    from core.pipeline import TranslationService,JobControl,NumericMismatchError
+    from providers.agy import AGYProvider,parse_response
+    from providers.online import ProviderSuspended
+    class MemoryCache:
+        def __init__(self):self.values={}
+        def get(self,kind,key):return self.values.get((kind,key))
+        def put(self,kind,key,value):self.values[kind,key]=value
+    options=load_options()
+    provider=AGYProvider(options.agy_executable,model=options.agy_model,probe_cli=False,root=folder/'policy-cli')
+    def no_transport(*args,**kwargs):raise AssertionError('GUI-only policy smoke must not call AGY')
+    provider._invoke=no_transport
+    try:
+        service=TranslationService(options,MemoryCache(),JobControl())
+        target=service._translate_using(provider,'归零24H','zh','policy',raw_target='Về 0, 24H')
+        assert target=='Về 0, 24H' and not service.last_attempt['content_validation_applied']
+        assert service._translate_using(provider,'15','zh','signed-cache',raw_target='-16')=='-16'
+        assert service._translate_using(provider,'15','zh','signed-cache')=='-16'
+        try:service._translate_using(SimpleNamespace(online=False,identity='offline-fixture'),'24','zh','offline',raw_target='0,24')
+        except NumericMismatchError:pass
+        else:raise AssertionError('Offline numeric guard changed')
+        argv=provider.command(['policy'],10)
+        assert argv[argv.index('--effort')+1]==provider.effort and provider.requests_sent==0
+        error_codes=[]
+        for error,expected in [('http2: server sent GOAWAY; server_shutting_down','NETWORK_ERROR'),
+                               ('Your previous response was blocked by content safety filters','RESPONSE_BLOCKED')]:
+            payload=(json.dumps(dict(event='result',result=dict(status='ERROR',error=error)))+'\n').encode()
+            try:parse_response(payload,['policy'],0)
+            except ProviderSuspended as exc:
+                assert exc.code==expected
+                error_codes.append(exc.code)
+            else:raise AssertionError('Provider error accepted as translation')
+        return dict(online_content_trusted=True,trusted_signed_cache_reused=True,offline_guard_preserved=True,model=provider.model,
+            effort=provider.effort,translation_requests=0,target_fixture=True,provider_error_codes=error_codes)
+    finally:provider.close()
 
 
 def wait_for(predicate,timeout=420):
@@ -292,8 +333,9 @@ def main():
                 src.backup(dst)
                 saved=Options.from_dict(json.loads(dst.execute('SELECT options FROM jobs ORDER BY updated DESC LIMIT 1').fetchone()[0]))
         window=MainWindow(folder/'state.sqlite3',persist_settings=False)
+        from core.storage import load_options
         window.options=Options(source=str(inputs),output=str(folder/'normal'),language='zh',mode=MODE if use_agy else 'Offline',
-            foreground='white',alignment='left',font_min=10)
+            foreground='white',alignment='left',font_min=10,agy_model=load_options().agy_model)
         if saved:window.options=saved
         window.source.setText(window.options.source);window.output.setText(window.options.output)
         window.language.setCurrentIndex(window.language.findData('zh'));window.mode.setCurrentIndex(window.mode.findData(window.options.mode))
@@ -302,6 +344,7 @@ def main():
         window.show();QTest.qWait(200)
         if args.cached_agy_only:report['cached_agy']=cached_agy_check(window,run,folder)
         elif args.gui_only:
+            report['translation_policy']=online_policy_smoke(folder)
             report['gui']=snapshots(window,folder);assert not report['gui']['clipped_button_labels']
             from ui.fresh_run import FreshRunDialog
             dialog=FreshRunDialog(window.collect_options(),window.run_registry,window)

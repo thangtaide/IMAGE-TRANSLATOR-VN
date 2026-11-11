@@ -156,15 +156,13 @@ class OnlineFreeTests(unittest.TestCase):
             self.provider.translate('你好', 'zh')
         self.session.request.assert_not_called()
 
-    def test_numeric_rejection_retains_target_and_does_not_cache(self):
+    def test_online_numeric_content_is_trusted_and_cached(self):
         self.session.request.return_value = translated('Xin chào 16')
         service = self.service()
         for _ in range(2):
-            with self.assertRaises(NumericMismatchError):
-                service.translate('你好 15', 'zh', 'context')
-        self.assertEqual(self.session.request.call_count, 2)
-        self.assertEqual(service.last_attempt['raw_translated_target'], 'Xin chào 16')
-        self.assertEqual(service.last_attempt['target_numeric_tokens'], ['16'])
+            self.assertEqual(service.translate('你好 15', 'zh', 'context'), 'Xin chào 16')
+        self.assertEqual(self.session.request.call_count, 1)
+        self.assertFalse(service.last_attempt['content_validation_applied'])
 
     def test_valid_cache_and_provider_isolation(self):
         offline = TranslationService(Options(), self.cache, JobControl(), offline=OfflineFixture())

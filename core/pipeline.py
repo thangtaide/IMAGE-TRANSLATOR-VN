@@ -119,6 +119,7 @@ class TranslationService:
     def _agy(self):
         if self.agy is None:
             self.agy = AGYProvider(executable=self.options.agy_executable, model=self.options.agy_model,
+                effort=self.options.agy_effort,
                 timeout=self.options.agy_timeout, max_requests=self.options.agy_max_requests,
                 checkpoint=self.control.checkpoint, cancelled=lambda: self.control.cancelled,
                 error_context=getattr(self, 'agy_error_context', None))
@@ -163,17 +164,22 @@ class TranslationService:
 
     def _translate_using(self, provider, text: str, language: str, context: str,
                          deferred: list | None = None, raw_target: str | None = None) -> str | None:
+        # Online/AI translations are authoritative by explicit user policy.
+        # Only offline engines retain post-translation numeric/glossary guards.
+        validate_content = getattr(provider, 'online', False) is not True
         provider_name = getattr(provider, 'engine_name', None)
         self.last_attempt = {'provider': provider_name if isinstance(provider_name, str) else type(provider).__name__,
                              'model_identity': provider.identity, 'mode': self.options.mode if self.options.mode in (AGY_MODE, GEMINI_API_MODE) else 'Online' if provider.online else 'Offline',
+                             'content_validation_applied': validate_content,
                              'ocr_source_text': text, 'raw_translated_target': None}
         explicit_percent = numeric_tokens(text) != re.findall(NUMBER_PATTERN, text)
         revision = 'glossary-v5-explicit-percent' if explicit_percent else 'glossary-v3-literal-numbers'
         key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, revision])
         cached = self.cache.get('translation', key)
-        # Keep unsigned legacy cache/118 existing receipts intact. Signed source or
-        # legacy signed target must use freshly validated, versioned cache entries.
-        signed_namespace = has_signed_number(text) or (cached is not None and has_signed_number(cached))
+        # Preserve existing keys/receipts for signed sources. Revalidating a
+        # legacy signed target is offline-only; trusted online cache must not
+        # trigger another request just because the provider changed a sign.
+        signed_namespace = has_signed_number(text) or (validate_content and cached is not None and has_signed_number(cached))
         if signed_namespace:
             revision = 'glossary-v5-explicit-percent-signed' if explicit_percent else 'glossary-v4-signed-numbers'
             key = digest([text, language, 'vi', provider.identity, self.options.glossary, context, revision])
@@ -210,14 +216,14 @@ class TranslationService:
                                  target_numeric_tokens=re.findall(number_pattern, translated or ''))
         if not translated or not translated.strip():
             raise ProviderError('Provider trả bản dịch rỗng')
-        if numeric_tokens(translated) != numeric_tokens(protected):
+        if validate_content and numeric_tokens(translated) != numeric_tokens(protected):
             raise NumericMismatchError('Bản dịch không qua kiểm tra số; giữ ảnh gốc để xem lại.')
         for marker, replacement in substitutions:
             pattern = re.compile(re.escape(marker), flags=re.IGNORECASE)
-            if not pattern.search(translated):
+            if validate_content and not pattern.search(translated):
                 raise ProviderError('Provider làm thay đổi tên riêng/số được bảo vệ; không xuất ảnh này. Hãy thử provider khác.')
             translated = pattern.sub(lambda _: replacement, translated)
-        if re.search(r'ZX[QN][A-Z]{2}[QN]XZ', translated, flags=re.I):
+        if validate_content and re.search(r'ZX[QN][A-Z]{2}[QN]XZ', translated, flags=re.I):
             raise ProviderError('Không khôi phục được ký hiệu bảo vệ')
         self.cache.put('translation', key, translated)
         return translated
@@ -463,7 +469,16 @@ class ProcessingManager:
                 files = [p for p in files if str(p) in requested]
             if not files:
                 raise ValueError('Thư mục không có ảnh được hỗ trợ hoặc không còn ảnh cần thử lại')
+            resuming=bool(self.resume_id)
             self.journal = self.resume_store.pipeline(self.options, files, self.cache, self.resume_id, self.chapter_id)
+            from providers.agy_models import bind_run_model
+            bind_run_model(self.options,self.journal['options'])
+            bind_run_model(self.service.options,self.journal['options'])
+            if resuming and self.options.mode==AGY_MODE and getattr(self.service.agy,'model',None) is not None:
+                from providers.agy_models import selection
+                _,effort=selection(self.options.agy_model,self.options.agy_effort)
+                if (self.service.agy.model,self.service.agy.effort)!=(self.options.agy_model,effort):
+                    raise ValueError('RESUME_MODEL_CHANGED: provider chưa khớp model/effort đã lưu; chưa gửi request.')
             self.resume_id = self.journal['id']
             self.emit({'type': 'resume_ready', 'resume_id': self.resume_id})
             self.emit({'type': 'files', 'files': [str(p) for p in files]})
@@ -479,6 +494,9 @@ class ProcessingManager:
                     self.service.agy_error_context = dict(job_id=self.journal['id'], chapter_id=self.chapter_id,
                                                          final_job_state='paused_provider')
                 service_identity = self.service.identity()
+                if self.options.mode==AGY_MODE and self.service.agy is not None:
+                    self.emit(dict(type='agy_run_selection',model=self.service.agy.model,
+                        effort=self.service.agy.effort or 'default',resumed=resuming))
                 if self.prepared_chapter is not None:
                     service_identity = digest([service_identity, self.prepared_chapter.identity])
             except Exception as exc:
@@ -496,6 +514,9 @@ class ProcessingManager:
                 relevant['render_repeat_id'] = repeat_id
             # Operational logging must not invalidate existing job/translation keys.
             relevant.pop('diagnostic_text', None)
+            # Verified IDs already encode every supported explicit effort;
+            # adding a settings field must not invalidate legacy receipts.
+            relevant.pop('agy_effort',None)
             for key in ('gemini_api_model', 'gemini_api_timeout', 'gemini_api_max_requests', 'gemini_api_free_tier_confirmed'):
                 if self.options.mode != GEMINI_API_MODE or key == 'gemini_api_free_tier_confirmed':
                     relevant.pop(key, None)
@@ -614,7 +635,9 @@ class ProcessingManager:
                         'size': list(image.size), 'regions': [asdict(r) for r in regions],
                         'preserved_regions': [asdict(r) for r in preserved_regions], 'ocr_overrides': override_receipts,
                         'no_text_to_translate': not regions, 'numeric_validator_version': VALIDATOR_VERSION,
+                        'translation_content_validation_applied': self.service.last_attempt.get('content_validation_applied'),
                         'translations': translations, 'warnings': warnings,
+                        'agy_selection':dict(model=self.options.agy_model,effort=getattr(self.service.agy,'effort',None) or 'default') if self.options.mode==AGY_MODE else None,
                         'render_layout': renderer.last_layout}
                     def before_publish(temp):
                         if self.prepared_chapter is not None:
@@ -664,6 +687,7 @@ class ProcessingManager:
                         request_scope=getattr(exc, 'request_scope', None),
                         image_index=image_indices[str(path)], provider=self.service.last_attempt.get('provider'),
                         model=getattr(getattr(exc,'_agy_capture',None),'model','unknown') if self.options.mode == AGY_MODE else None,
+                        effort=getattr(getattr(exc,'_agy_capture',None),'context',{}).get('agy_effort') if self.options.mode==AGY_MODE else None,
                         agy_timeout=self.options.agy_timeout if self.options.mode == AGY_MODE else None,
                         agy_process_started=getattr(getattr(exc,'_agy_capture',None),'started',None) if self.options.mode == AGY_MODE else None,
                         **(error_reference(exc) if self.options.mode == AGY_MODE else {}),

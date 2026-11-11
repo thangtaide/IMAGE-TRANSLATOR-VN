@@ -242,13 +242,12 @@ class GeminiPipelineTests(unittest.TestCase):
         self.assertTrue(any(e.get('type')=='gemini_api_usage' for e in events))
         self.assertNotIn(CANARY,json.dumps(m.journal))
 
-    def test_numeric_reject_not_cached_fallback_only_affected_page(self):
+    def test_online_numeric_content_is_accepted_and_rendered(self):
         self.http.transform=lambda t:'Xin chào 9' if '2' in t else t.replace('你好','Xin chào')
         m=self.manager();r=m.run()
-        self.assertEqual(r['fallback_original'],1);self.assertEqual(r['completed'],2)
-        fallback=Path(r['review_pages'][0]['output_path'])
-        self.assertEqual(file_digest(fallback),file_digest(self.source/'2.png'))
-        self.assertNotIn('Xin chào 9',json.dumps(m.journal))
+        self.assertEqual(r['fallback_original'],0);self.assertEqual(r['completed'],3)
+        item=self.cache.item(m.job_id,str(self.source/'2.png'))
+        self.assertEqual(self.cache.get('metadata',item['fingerprint'])['translations'],['Xin chào 9'])
 
     def test_quota_pause_restart_switch_offline_preserves_published_receipt(self):
         opts=self.options(agy_batch_regions=1)
@@ -279,11 +278,10 @@ class GeminiPipelineTests(unittest.TestCase):
         self.assertFalse(list((self.root/'export').glob('*.png')))
         self.assertFalse(m.journal['regions']);self.assertEqual(len(self.http.calls),1)
 
-    def test_provider_cache_namespace_and_numeric_guard_unchanged(self):
+    def test_provider_cache_namespace_and_trusted_numeric_content(self):
         service=self.manager().service;p=service._gemini_api()
-        with self.assertRaises(NumericMismatchError):
-            service._translate_using(p,'15','zh','qa',raw_target='16')
-        self.assertEqual(service._translate_using(p,'15','zh','qa',raw_target='15'),'15')
+        self.assertEqual(service._translate_using(p,'15','zh','qa',raw_target='16'),'16')
+        self.assertEqual(service._translate_using(p,'15','zh','qa',raw_target='15'),'16')
         class Other:
             online=True;identity='other-provider'
             def translate(self,*args):return 'other 15'
@@ -333,12 +331,10 @@ class GeminiPipelineTests(unittest.TestCase):
         self.assertEqual(job.options.mode,MODE)
         self.assertFalse(job.options.allow_online_fallback);self.assertFalse(self.http.calls)
 
-    def test_glossary_guard_still_rejects_lost_markers(self):
+    def test_online_glossary_paraphrase_is_not_rejected(self):
         opts=self.options();opts.glossary={'名字':'Tên'}
         service=self.manager(opts).service
-        from providers.online import ProviderError
-        with self.assertRaises(ProviderError):
-            service._translate_using(service._gemini_api(),'名字 15','zh','qa',raw_target='Name 15')
+        self.assertEqual(service._translate_using(service._gemini_api(),'名字 15','zh','qa',raw_target='Name 15'),'Name 15')
 
     def test_api_batch_recipe_changes_output_identity_while_ocr_is_reused(self):
         m=self.manager();m.run();first_job=m.job_id;self.ocr_calls.clear()

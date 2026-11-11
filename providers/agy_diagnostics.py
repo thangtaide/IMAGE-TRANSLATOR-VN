@@ -20,7 +20,8 @@ FIELDS = TOOL_KEYS | {'event', 'type', 'result', 'status', 'response', 'structur
     'tools', 'tool_declarations', 'parameters', 'minLength', 'maxLength', 'minItems', 'maxItems'}
 TYPES = {'object', 'array', 'string', 'boolean', 'integer', 'number', 'null'}
 CODES = {'NONE', 'INVALID_RESPONSE', 'PROVIDER_UNAVAILABLE', 'QUOTA_EXCEEDED', 'RATE_LIMITED',
-         'AUTH_REQUIRED', 'TIMEOUT', 'CANCELLED', 'REQUEST_LIMIT', 'INVALID_REQUEST', 'OTHER_ERROR'}
+         'AUTH_REQUIRED', 'TIMEOUT', 'CANCELLED', 'REQUEST_LIMIT', 'INVALID_REQUEST', 'OTHER_ERROR',
+         'NETWORK_ERROR', 'RESPONSE_BLOCKED','MODEL_UNAVAILABLE'}
 REASONS = {'TOOL_INDICATOR', 'JSON_PARSE', 'INVALID_EVENT', 'RESULT_COUNT', 'AGENT_TURNS',
            'RESPONSE_STRING', 'SCHEMA', 'COUNT', 'FIELDS', 'ITEM', 'MISSING_ID', 'NONE', 'TRANSPORT'}
 REASON_MAP = {'Unexpected tool use': 'TOOL_INDICATOR', 'Invalid event': 'INVALID_EVENT',
@@ -152,6 +153,9 @@ def sanitize(value):
     """Second boundary at the log writer. Reject raw/untrusted metadata fields."""
     if not isinstance(value, dict): value = {}
     out = {'version': VERSION}
+    from providers.agy_models import MODEL_IDS
+    if isinstance(value.get('model'),str) and value['model'] in MODEL_IDS:out['model']=value['model']
+    if isinstance(value.get('effort'),str) and value['effort'] in ('low','medium','high','default'):out['effort']=value['effort']
     enums = {'classification': CLASSES, 'parser_error_code': CODES, 'parser_reason': REASONS,
              'guard_decision': {'ACCEPT', 'REJECT', 'STOP', 'CANCELLED'}}
     for key, choices in enums.items():

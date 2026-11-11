@@ -1,5 +1,65 @@
 # IMAGE TRANSLATOR VN
 
+## Sửa Sonnet tự trở về Gemini khi Bắt đầu — 12/11/2026
+
+**Bắt đầu dịch** dùng model đã Lưu trong Cài đặt và tạo journal mới; **Tiếp
+tục/Thử lại ảnh lỗi** giữ model của run cũ mà không đổi preference cho lượt mới.
+Đã kiểm tra source và EXE bằng thao tác Settings/Start/Continue thật, worker
+fixture không gọi AGY. Bản mới đã build/chạy/mở lại:
+`dist/ImageTranslatorVN-20261111T192625787431Z/ImageTranslatorVN-20261111T192625787431Z.exe`.
+Giữ `_internal`, đóng bản EXE cũ trước khi mở bản này.
+[Nguyên nhân, kiểm thử và ảnh bằng chứng](docs/SONNET_START_FIX.md).
+
+## Renderer offline: box OCR giao nhẹ ở góc — 12/11/2026
+
+Source đã sửa LAYOUT_UNFIT do gộp vùng thưa từ các box giao nhẹ ở góc.
+Chỉ thu hẹp vùng đặt chữ trong giới hạn an toàn, giữ đủ nội dung và kiểm tra
+va chạm. Không thay engine OCR/mask; mask rỗng vẫn báo lỗi. 174 test liên
+quan PASS; OCR + Argos + render offline thật PASS trên fixture trung tính.
+Chưa build lại EXE. [Chi tiết, ảnh minh họa và giới hạn](docs/OFFLINE_LAYOUT_FIX.md).
+
+## Chọn model AI trong Cài đặt — 11/11/2026
+
+Vào **Cài đặt → AI dịch thuật (AGY)** để chọn Gemini Flash Low/Medium/High,
+Claude Sonnet 4.6, Claude Opus 4.6 Thinking hoặc GPT-OSS 120B Medium. Lưu mới
+áp dụng; Hủy giữ nguyên. Màn hình chính chỉ có trạng thái ngắn. Run tiếp tục
+giữ model/effort đã lưu của run; Settings mới áp dụng cho run mới.
+
+EXE mới đã chạy GUI, lưu/mở lại, DPI 100/125/150% và Opus Whole Chapter thật:
+`dist/ImageTranslatorVN-20261111T165120860976Z/ImageTranslatorVN-20261111T165120860976Z.exe`.
+Giữ `_internal`. Gemini Low, Sonnet và Opus live PASS; **GPT-OSS live FAIL
+INVALID_RESPONSE/AGENT_TURNS**, nên **CHƯA ĐẠT toàn bộ model**. Đã dùng đủ
+4/4 lượt AGY CLI, không tự retry/fallback. Regression liên quan 211 PASS;
+smoke model/ToonCN 40 PASS (hai bộ trùng chín test), không phải full suite.
+
+[Hướng dẫn, model ID/effort](docs/AI_MODEL_SETTINGS.md) ·
+[Báo cáo, ảnh GUI và giới hạn nghiệm thu](docs/AI_MODEL_SETTINGS_REPORT.md).
+
+## AGY: lỗi kết nối/bộ lọc và model Low — 11/11/2026
+
+AGY báo rõ NETWORK_ERROR khi stream HTTP/2 bị máy chủ đóng; RESPONSE_BLOCKED
+khi nhà cung cấp chặn phản hồi bằng bộ lọc nội dung, kể cả CLI exit 0. Không
+tự retry hoặc nhận terminal ERROR làm thành công. Model mặc định Low và cửa
+sổ cũ không ghi đè lựa chọn model mới trên đĩa khi lưu/đóng.
+
+EXE mới đã build, chạy GUI và offline E2E:
+`dist/ImageTranslatorVN-20261111T144631162670Z/ImageTranslatorVN-20261111T144631162670Z.exe`.
+Giữ `_internal`, đóng bản EXE cũ. Source AGY Low thật 3 fixture PASS; regression
+liên quan 201 PASS. Batch trang 112 vẫn bị provider chặn, không tuyên bố đã gỡ
+bộ lọc. [Báo cáo và bằng chứng](docs/AGY_RECURRING_20261111.md).
+
+## Bản dịch online và Flash Low — 11/11/2026
+
+Bản dịch AGY/AI/API và mọi provider online được nhận mà không kiểm tra lại
+nội dung số hoặc marker thuật ngữ; offline vẫn giữ validator. Lỗi giao thức,
+provider, mask/xóa chữ và layout vẫn được báo đúng. Cấu hình hiện tại dùng
+`gemini-3.8-flash-low`, effort low; mở lại app để nạp nếu app đang chạy.
+
+EXE mới đã build/chạy GUI và contract smoke:
+`dist/ImageTranslatorVN-20261110T191355235181Z/ImageTranslatorVN-20261110T191355235181Z.exe`.
+Giữ `_internal` bên cạnh EXE. 283 test liên quan PASS; không gọi dịch thêm.
+[Chi tiết, ảnh 0020 đã khôi phục và hai lỗi mask còn lại](docs/ONLINE_TRANSLATION_TRUST.md).
+
 ## Giao diện mới, cache an toàn và dịch lại từ đầu — 10/11/2026
 
 **ĐẠT:** nút **Dịch lại từ đầu** trực tiếp trong tab Thư mục ảnh tạo run/DB/

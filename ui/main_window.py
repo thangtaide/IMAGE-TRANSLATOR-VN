@@ -21,6 +21,7 @@ from ui.models_dialog import ModelManagerDialog
 from ui.preview import PreviewDialog
 from ui.settings_dialog import SettingsDialog
 from ui.workers import ProcessingWorker
+from providers.agy_models import label as ai_model_label
 
 
 def duration(seconds: float | None) -> str:
@@ -139,7 +140,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.mode_label,1,0)
         self.mode = QComboBox()
         for label, value in [('Offline','Offline'), ('Online Free','Online Free'),
-                ('AI Gemini AGY — Batch', AGY_MODE), ('AI Gemini AGY — Toàn chương (1 lần)', WHOLE_MODE),
+                ('AI qua AGY — Batch', AGY_MODE), ('AI qua AGY — Toàn chương (1 lần)', WHOLE_MODE),
                 (GEMINI_API_MODE,GEMINI_API_MODE), ('Auto Fallback','Auto Fallback')]:
             self.mode.addItem(label, value)
         self.mode.setCurrentIndex(max(0,self.mode.findData('Online Free' if self.options.mode=='Online' else self.options.mode)))
@@ -350,7 +351,7 @@ class MainWindow(QMainWindow):
             self.privacy.setText('Dịch ảnh/chương bằng Offline với cấu hình OCR, font và xuất ảnh hiện tại. '
                                  'Phân tích URL chỉ đọc thông tin website; không gửi văn bản OCR ra mạng.')
         if mode == AGY_MODE:
-            self.privacy.setText('AI Gemini — AGY: chỉ gửi các vùng OCR qua phiên AGY đã đăng nhập. '
+            self.privacy.setText('AI qua AGY: chỉ gửi các vùng OCR qua phiên AGY đã đăng nhập. '
                 'Model: ' + self.options.agy_model + '. Không dùng API key riêng hoặc tự dùng thêm credits; '
                 'file/shell/web/MCP bị chặn. Batch tối đa 24 trang / 60 vùng / 3.000 ký tự nguồn; '
                 'chờ 5–10 giây giữa các lần dịch. Chỉ chạy khi bấm Bắt đầu; không tự đổi provider.')
@@ -363,11 +364,11 @@ class MainWindow(QMainWindow):
             self.privacy.setText('Toàn bộ chữ của chương/ảnh đã chọn → một invocation AGY sau xác nhận riêng. '
                 'Không phải batch 24 trang, không chờ 5–10 giây. Kết quả riêng; không tiếp công việc Batch hoặc tự fallback.')
         info = (self.options.gemini_api_model + (' • có key • ' if key_available() else ' • thiếu key • ') + check_configuration(self._mode_options()).code
-                if mode == GEMINI_API_MODE else self.options.agy_model if mode in (AGY_MODE, WHOLE_MODE) else
+                if mode == GEMINI_API_MODE else 'AI: '+ai_model_label(self.options.agy_model,self.options.agy_effort) if mode in (AGY_MODE, WHOLE_MODE) else
                 self.online_provider.currentText() if mode in ('Online', 'Online Free') else self.offline_provider.currentText())
         self.provider_info.setText(info)
         if mode == AGY_MODE:
-            self.provider_info.setText(info + ' • tối đa 24 trang / 60 vùng / 3.000 ký tự • chờ 5–10s')
+            self.provider_info.setText(info)
         if mode == WHOLE_MODE:
             self.provider_info.setText(info + ' • toàn chương • 1 invocation sau xác nhận')
         if hasattr(self, 'start_button'):
@@ -402,6 +403,14 @@ class MainWindow(QMainWindow):
         return result.ready
 
     def collect_options(self) -> Options:
+        # Start/resume/close must not overwrite a model changed by another
+        # window or an explicit local settings update while this window is open.
+        # SettingsDialog saves explicit choices immediately; QA opts stay local.
+        if self.persist_settings and (CONFIG / 'settings.json').is_file():
+            saved = load_options()
+            if (saved.agy_model,saved.agy_effort) != (self.options.agy_model,self.options.agy_effort):
+                self.options.agy_model,self.options.agy_effort = saved.agy_model,saved.agy_effort
+                self.update_mode()
         self.options.source = self.source.text().strip()
         self.options.output = self.output.text().strip()
         self.options.language = self.language.currentData()
@@ -476,12 +485,11 @@ class MainWindow(QMainWindow):
         except (OSError,ValueError,KeyError) as exc:
             QMessageBox.warning(self,'Không tạo được lượt mới',str(exc))
 
-    def start(self, only: list[str] | None = None) -> None:
+    def start(self, only: list[str] | None = None, *, resume: bool = False) -> None:
         if self.worker and self.worker.isRunning():
             return
-        options = self.collect_options()
-        if only is None and not options.skip_success:
-            self.resume_id=None  # A repeat render is separate from explicitly continuing a checkpoint.
+        preferred_options = self.collect_options()
+        options = Options.from_dict(preferred_options.to_dict())
         if options.mode == WHOLE_MODE:
             if only is not None:
                 QMessageBox.information(self, 'Retry thuộc công việc Batch',
@@ -490,6 +498,15 @@ class MainWindow(QMainWindow):
             self.open_selected_whole(dict(kind='folder', path=options.source, recursive=options.recursive,
                                            options=options))
             return
+        if resume and self.resume_id:
+            from core.resume import ResumeStore
+            from providers.agy_models import bind_run_model
+            try:
+                saved = ResumeStore(self.active_cache_path).read(self.resume_id)
+                bind_run_model(options, saved['options'])
+            except (OSError, ValueError, KeyError) as exc:
+                QMessageBox.warning(self, 'Không tiếp tục được lượt cũ', str(exc))
+                return
         if not self.check_provider_setup(options):
             return
         if not options.source or not options.output:
@@ -497,10 +514,23 @@ class MainWindow(QMainWindow):
             return
         try:
             if self.persist_settings:
-                save_options(options)
+                # The pinned model of an old run is not the user's new-run preference.
+                save_options(preferred_options)
         except OSError as exc:
             QMessageBox.critical(self, 'Không lưu được cấu hình', str(exc))
             return
+        if not resume:
+            # Start always creates a new journal; only Continue/Retry may bind
+            # a previous checkpoint. skip_success controls cache, not run intent.
+            if self.active_run_id and options.mode == AGY_MODE:
+                try:
+                    old = self.run_registry.read(self.active_run_id)['options']
+                except (OSError, ValueError, KeyError) as exc:
+                    QMessageBox.warning(self, 'Không đọc được lượt đã lưu', str(exc))
+                    return
+                if old.get('mode') == AGY_MODE and old.get('agy_model') != options.agy_model:
+                    self.clear_resume_intent()  # Keep the old isolated run immutable.
+            self.resume_id = None
         self.failed = []
         self.provider_paused = False
         self.provider_pending = []
@@ -517,7 +547,10 @@ class MainWindow(QMainWindow):
         self.started = time.monotonic()
         self.pause_seconds = 0
         self.paused_at = None
-        self.current.setText('Đang quét thư mục và kiểm tra model...')
+        self.current.setText('Đang tiếp tục lượt cũ...' if resume else 'Đang quét thư mục và kiểm tra model...')
+        if options.mode == AGY_MODE:
+            self.provider_info.setText('AI: '+ai_model_label(options.agy_model, options.agy_effort)
+                                      +(' · tiếp tục lượt cũ' if resume else ''))
         self.worker = ProcessingWorker(options, only, self, cache_path=self.active_cache_path, resume_id=self.resume_id,
             run_id=self.active_run_id,run_base=self.cache_path)
         self.worker.event.connect(self.handle_event)
@@ -564,6 +597,9 @@ class MainWindow(QMainWindow):
             return
         if kind in ('agy_batch', 'gemini_api_batch'):
             self.current.setText(f"{'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+            return
+        if kind=='agy_run_selection':
+            self.provider_info.setText('AI: '+ai_model_label(event['model'],'' if event.get('effort')=='default' else event.get('effort',''))+' · lượt đang chạy')
             return
         if kind == 'gemini_api_usage':
             self.privacy.setText(gemini_usage_text(event))
@@ -667,10 +703,10 @@ class MainWindow(QMainWindow):
             self.start()
             return
         if self.provider_paused and (not self.worker or not self.worker.isRunning()):
-            self.start(list(self.provider_pending))
+            self.start(list(self.provider_pending), resume=True)
             return
         if self.worker and not self.worker.isRunning() and self.resume_id and self.unfinished:
-            self.start(list(self.unfinished));return
+            self.start(list(self.unfinished), resume=True);return
         if self.worker:
             self.worker.control.resume()
             self.pause_button.setEnabled(True)
@@ -688,7 +724,7 @@ class MainWindow(QMainWindow):
     def retry(self) -> None:
         paths = list(dict.fromkeys(self.failed + self.unfinished))
         if paths:
-            self.start(paths)
+            self.start(paths, resume=True)
 
     def worker_finished(self) -> None:
         self.timer.stop()

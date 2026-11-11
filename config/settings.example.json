@@ -1,8 +1,10 @@
 {
   "source": "",
-  "output": "D:\\TransTool\\output",
+  "output": "output",
   "language": "zh",
   "mode": "Offline",
+  "agy_model": "gemini-3.8-flash-low",
+  "agy_effort": "low",
   "online_provider": "MyMemory",
   "offline_provider": "Argos",
   "allow_online_fallback": false,

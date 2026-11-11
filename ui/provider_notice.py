@@ -99,6 +99,7 @@ class ProviderNotice(QWidget):
                 'NETWORK_ERROR': 'Không kết nối được provider.', 'TIMEOUT': 'Yêu cầu đã hết thời gian chờ.',
                 'REQUEST_BUDGET': 'Đạt budget request cục bộ; không phải bằng chứng hết quota Google.',
                 'INVALID_RESPONSE': 'Phản hồi không qua kiểm tra giao thức/JSON/ID.',
+                'RESPONSE_BLOCKED': 'Nhà cung cấp báo phản hồi bị bộ lọc nội dung chặn.',
             }.get(code, 'Provider hoặc cấu hình chưa cho phép tiếp tục an toàn.')
         from providers.gemini_diagnostics import clean
         api = clean(event.get('gemini_api_request'))
@@ -149,17 +150,29 @@ class ProviderNotice(QWidget):
             if type(seconds) is int and 10<=seconds<=1800: cause += ' '+str(seconds)+' giây'
             facts = 'Không xác định được backend đã nhận request hay chưa; không tự retry hoặc đổi provider.'
             remedy = 'Thông tin lỗi được lưu nếu ghi diagnostic thành công. Xem attempt bên dưới khi cần điều tra.'
+        elif code=='RESPONSE_BLOCKED' and event.get('provider')=='AGY Gemini':
+            title = 'AGY: nhà cung cấp chặn phản hồi'
+            cause = 'Bộ lọc nội dung của nhà cung cấp đã chặn phản hồi. Đây không phải validator bản dịch của ứng dụng.'
+            facts = 'Kết quả đã hoàn tất được giữ; batch hiện tại còn pending.'
+            remedy = 'Không tự gửi lại batch bị chặn hoặc chấp nhận phản hồi ERROR làm thành công. Xem diagnostic để đối chiếu.'
+        elif code=='NETWORK_ERROR' and event.get('provider')=='AGY Gemini':
+            title = 'AGY: kết nối bị gián đoạn'
+            cause = 'AGY báo luồng HTTP/2 bị máy chủ đóng (GOAWAY); batch chưa hoàn tất.'
+            facts = 'Checkpoint và ảnh hoàn tất được giữ; trạng thái backend/chi phí chưa xác minh.'
+            remedy = 'Kiểm tra tình trạng dịch vụ/kết nối trước khi chủ động Tiếp tục; không tự retry hoặc đổi provider.'
         delay = event.get('retry_after')
         reset = (' Provider yêu cầu đợi ít nhất ' + str(delay) + ' giây.'
                  if type(delay) is int and 0 <= delay < 10**7 else ' Chưa xác định thời điểm khôi phục.')
         self.title.setText(title + ' • ' + code)
         self.last_code = code
-        self.message.setText(cause + '\n' + facts + '\n' + remedy + ('' if config or agy_init else reset))
+        self.message.setText(cause + '\n' + facts + '\n' + remedy + ('' if config or agy_init or code=='RESPONSE_BLOCKED' else reset))
         short = ('Mở Cài đặt và kiểm tra project ở AI Studio; chỉ xác nhận khi đúng.' if config else
                  'Đây là lỗi đã lưu; xem chi tiết trước khi chủ động tiếp tục.' if saved else
                  'Kiểm tra quyền truy cập website nguồn; không vượt login/VIP/paywall/CAPTCHA.' if code == 'SOURCE_ACCESS_DENIED' else
                  'Kiểm tra quyền model/project tại AI Studio. Xem Chi tiết; không tự đổi key/billing.' if code == 'ACCESS_DENIED' else
                  'Xem Chi tiết/Nhật ký để biết bằng chứng và cách xử lý; kết quả cũ được giữ.')
+        if code=='RESPONSE_BLOCKED' and event.get('provider')=='AGY Gemini':
+            short = 'Nhà cung cấp chặn phản hồi bằng bộ lọc nội dung; giữ pending, không tự gửi lại batch.'
         self.summary.setText('Kiểm tra cấu hình AGY; đã pause, không tạo Origin mới.' if agy_init else short)
         self.settings.setVisible(config)
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -167,10 +180,15 @@ class ProviderNotice(QWidget):
         provider = provider if provider in ('AI Gemini API', 'AI Gemini AGY', 'Gemini API', 'AGY Gemini', 'MyMemory', 'Offline') else 'Provider'
         page = event.get('image_index')
         page_label = ' • Trang ' + str(page) if type(page) is int and 0 < page < 10**7 else ''
-        self.log.appendPlainText(stamp + ' • ' + provider + ' • ' + code + page_label + '\n' + facts + '\n' + remedy)
+        log_facts = cause+'\n'+facts if provider=='AGY Gemini' and code in ('RESPONSE_BLOCKED','NETWORK_ERROR') else facts
+        display_provider='AGY' if provider=='AGY Gemini' else provider
+        self.log.appendPlainText(stamp + ' • ' + display_provider + ' • ' + code + page_label + '\n' + log_facts + '\n' + remedy)
         model=event.get('model')
-        if isinstance(model,str) and re.fullmatch(r'gemini-[A-Za-z0-9.-]{1,100}',model):
+        from providers.agy_models import MODEL_IDS
+        if isinstance(model,str) and model in MODEL_IDS:
             self.log.appendPlainText('Model đã cấu hình: '+model)
+            effort=event.get('effort')
+            if effort in ('low','medium','high','default'):self.log.appendPlainText('Mức suy luận: '+effort)
         attempt = event.get('agy_attempt_id')
         if isinstance(attempt,str) and re.fullmatch('[a-f0-9]{32}',attempt):
             from core.paths import ROOT

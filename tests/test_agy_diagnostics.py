@@ -221,15 +221,11 @@ class DiagnosticPipelineTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_TRANSPORT_EXCEPTION',text)
         self.assertEqual(json.loads(text)['agy_protocol']['parser_error_code'],'TIMEOUT')
 
-    def test_numeric_rejection_remains_fallback_not_protocol_acceptance(self):
+    def test_online_translation_is_not_rejected_by_numeric_content(self):
         self.runner.transform=lambda text:text.replace('你好','Xin chào').replace('2','999')
         m=self.manager();result=m.run()
-        self.assertEqual((result['completed'],result['fallback_original']),(2,1))
-        diag=json.loads(m.diagnostics.path.read_text(encoding='utf-8').splitlines()[0])
-        self.assertEqual(diag['error_code'],'NUMERIC_MISMATCH')
-        self.assertEqual(diag['agy_protocol']['classification'],'VALID_TRANSLATION_RESPONSE')
-        self.assertFalse(diag['agy_protocol']['translation_cached'])
-        self.assertIsNone(diag['raw_translated_target'])
+        self.assertEqual((result['completed'],result['fallback_original']),(3,0))
+        self.assertFalse(m.diagnostics.path.exists())
 
     def test_request_limit_is_observed_without_an_extra_generation(self):
         provider=self.provider(max_requests=1)

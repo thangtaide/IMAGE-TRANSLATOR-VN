@@ -1,5 +1,135 @@
 # Trạng thái Image Translator VN
 
+## Bắt đầu dịch giữ Sonnet đã chọn — 12/11/2026
+
+Tái hiện config Sonnet nhưng Start còn truyền resume_id của journal Gemini
+khi skip bật. Sửa GUI tách Start/Continue: Start tạo journal mới theo Settings;
+Continue/Retry pin run cũ vào options copy, không ghi model cũ ngược vào
+preference. Đổi model khi Start không sửa namespace run riêng trước đó.
+
+117 test liên quan PASS (43 model/cache/UI + 74 multipage/resume/Whole);
+GUI source và EXE click Start/Continue, Save/
+Cancel, mở lại, DPI 100/150% PASS với worker fixture, 0 request AGY thật.
+Đã build và chạy EXE mới:
+`dist/ImageTranslatorVN-20261111T192625787431Z/ImageTranslatorVN-20261111T192625787431Z.exe`.
+Config, DB/checkpoint và EXE cũ nguyên hash. Không đổi OCR/renderer/parser.
+[Chi tiết và kết quả regression bổ sung](docs/SONNET_START_FIX.md), evidence
+`output/sonnet-start-fix-20261111T192349Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Renderer offline: OCR boxes giao nhẹ ở góc — 12/11/2026
+
+Đã sửa fallback cho nhóm box thưa vốn gây LAYOUT_UNFIT: chỉ thu hẹp tối đa
+8 px/cạnh, giữ ≥85% diện tích box và đủ nội dung ở font_min. Không mở vùng
+sang hình khác, không đổi nhóm vốn hợp lệ. OCR engine/grouping, mask/inpaint
+giữ nguyên; mask rỗng vẫn báo TEXT_REMOVAL_FAILED. Tăng imaging revision cho
+lượt xử lý mới, không migrate/xóa cache hoặc đổi ảnh đã xong.
+
+174 test liên quan PASS (hợp ba bộ, không cộng trùng); không phải full suite.
+PaddleOCR + Argos zh→en→vi + inpaint/render offline thật PASS trên ảnh trung
+tính, network/AGY 0 lần gọi. E2E Anh ban đầu FAIL do thiếu det-en; không tự
+tải model. Không xử lý lại ảnh Chap 27 có nội dung tình dục trực diện, không
+xuất thêm ảnh vào thư mục truyện. Chưa build EXE, config/DB/checkpoint/EXE cũ
+nguyên hash. [Báo cáo và cách dùng](docs/OFFLINE_LAYOUT_FIX.md), evidence
+`output/offline-layout-20261111T185101Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Model AI trong Cài đặt — 11/11/2026
+
+Đã bổ sung catalog cố định AGY 1.5.5, bốn nhóm model trong Cài đặt hiện có;
+Gemini ba effort khớp ID/flag, Claude/GPT dùng mặc định model. Config cũ hợp lệ
+được giữ; Save/Cancel/persistence, Batch/Whole và snapshot/resume đã kiểm tra.
+Không đổi OCR/mask/inpaint/render hoặc content validation.
+
+Regression liên quan 211 PASS; smoke model + ToonCN 40 PASS (trùng chín test).
+Ba FAIL đầu do Node thiếu PATH đã chạy lại PASS với Node cài sẵn, không sửa
+Bridge. Source và EXE GUI DPI 100/125/150%, popup tối, lưu/đóng/mở lại PASS.
+
+AGY thật dùng đủ 4/4 invocation: Gemini Low Batch PASS, Sonnet Batch PASS,
+GPT-OSS Batch FAIL INVALID_RESPONSE/AGENT_TURNS (CLI trả hai lượt), Opus Whole
+từ EXE PASS. Không nới guard, không gọi thêm hoặc fallback. **Settings/config
+PASS; CHƯA ĐẠT toàn bộ model vì GPT-OSS.** Không gọi regression liên quan là
+full suite hoặc khẳng định mức effort nội bộ khi CLI chỉ echo model ID.
+
+Đã chạy build.bat và kiểm EXE mới:
+`dist/ImageTranslatorVN-20261111T165120860976Z/ImageTranslatorVN-20261111T165120860976Z.exe`.
+Config người dùng và EXE baseline nguyên hash; dữ liệu QA riêng dưới output.
+[Báo cáo](docs/AI_MODEL_SETTINGS_REPORT.md),
+[hướng dẫn](docs/AI_MODEL_SETTINGS.md), evidence
+`output/ai-model-settings-20261111T162337Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## AGY lỗi mới và đồng bộ model — 11/11/2026
+
+Đã được quyền giải mã ba bundle trong RAM, kiểm tra hash/length. Trang 18
+`eb5c6904…`: HTTP/2 GOAWAY/server_shutting_down → NETWORK_ERROR. Trang 112
+`2e8d41af…`, `6b49ae45…`: terminal ERROR/content safety filters dù exit 0 →
+RESPONSE_BLOCKED. Sửa parser classification, diagnostic và banner; không nhận
+ERROR/candidate/multi-turn làm thành công. **Trang 112 vẫn BLOCKED_BY_PROVIDER**.
+
+Config thực tế đã trở lại Medium. Tái hiện được stale MainWindow ghi đè lựa
+chọn Low trên đĩa khi lưu/đóng; sửa đồng bộ model trước collect/save, cho phép
+đổi chủ động trong dialog như cũ. Default source/provider và config hiện tại
+đã đặt Low. Trước sửa model 2 FAIL/2 PASS, sau sửa model 48 PASS; regression
+toàn phần liên quan **201 PASS**. AGY Low thật thêm 1 request (3 fixture/17
+ký tự) PASS 3/3 OCR/dịch/render, 7,875 s; tổng các lượt của agent 2/6, còn 4.
+Không gửi lại batch bị chặn, không đổi validator online hoặc pipeline ảnh.
+
+Đã chạy build.bat và EXE mới: GUI/classifier/model Low PASS; offline E2E
+normal/cache/fresh/cancel/reopen/resume PASS, không gọi AGY thêm. Lần QA đầu
+FAIL do truyền 3 fixture cho driver đòi 1, đã chạy lại đúng 1 fixture PASS.
+527 file dữ liệu và EXE cũ nguyên hash. Không tuyên bố hết lỗi provider/filter.
+EXE: `dist/ImageTranslatorVN-20261111T144631162670Z/ImageTranslatorVN-20261111T144631162670Z.exe`.
+[Báo cáo và dữ kiện](docs/AGY_RECURRING_20261111.md), evidence
+`output/agy-recurring-20261111T045708Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Tin cậy bản dịch online và Flash Low — 11/11/2026
+
+Theo yêu cầu mới: mọi provider `online=True` (AGY Batch/Whole, Gemini API,
+MyMemory/LibreTranslate) bỏ kiểm tra lại số và marker thuật ngữ sau dịch.
+Offline giữ validator; JSON/ID/schema, lỗi provider, checkpoint và mask/layout
+guard giữ nguyên. Không làm mất cache/receipt đã có.
+
+Cấu hình hiện tại đã đổi duy nhất model sang `gemini-3.8-flash-low`; catalog
+AGY có slug này, source và EXE kiểm tra model/effort low đúng. Không gọi dịch
+thêm. 0020 là false positive `归零` → `0`; đã nhận lại payload cũ và render riêng
+5 vùng thành công. Hai lỗi mask rỗng 0076/0111 vẫn chưa sửa (target Latin/email
+giữ nguyên nhưng pipeline vẫn đòi xóa); không coi đó là lỗi validator nội dung.
+Job kiểm tra đã kết thúc: 141 done / 3 fallback; ba lỗi quota 67 là lịch sử.
+
+**283 test liên quan PASS**, source GUI PASS. Đã chạy build.bat và chạy EXE mới
+trên Windows: GUI + contract smoke của chính sách online/offline PASS, exit 0.
+Smoke dùng target fixture; không tuyên bố có lượt dịch Low thật mới hoặc full
+regression toàn project. Không sửa OCR/mask/inpaint/renderer, không đổi EXE cũ.
+
+EXE: `dist/ImageTranslatorVN-20261110T191355235181Z/ImageTranslatorVN-20261110T191355235181Z.exe`.
+[Báo cáo/cách dùng/giới hạn](docs/ONLINE_TRANSLATION_TRUST.md), evidence
+`output/ai-numeric-policy-20261110T185605Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## AGY Trang 67: quota và phân loại lỗi — 11/11/2026
+
+**BLOCKED_BY_PROVIDER, chưa đạt dịch/render/EXE end-to-end.** Ba attempt
+`92565269…`, `74271ef9…`, `ca7cd079…` cùng payload/batch 14 trang/57 vùng,
+exit 3: stdout báo `Individual quota reached`, stderr RESOURCE_EXHAUSTED/429.
+DPAPI CurrentUser giải mã/đối chiếu hash trong RAM theo quyền nhiệm vụ; không
+có bản dịch để khôi phục. Sửa tối thiểu `providers/agy.py` nhận diện explicit
+quota string thành QUOTA_EXCEEDED, giữ strict validation và no-auto-retry.
+
+AGY thật **1/6** request: source xử lý riêng OCR đã lưu của 0067 (3 vùng/43
+ký tự), cùng model; sau 2,938 s vẫn quota, phân loại/dừng đúng. Không tiêu 5
+lượt còn lại, không tạo cache dịch/ảnh giả thành công. Backend/chi phí UNKNOWN.
+Trước sửa 58 test PASS; fixture tái hiện 2 FAIL; sau sửa regression liên quan
+**148 PASS**, gồm Batch/Whole/timeout/guard/checkpoint/resume. Không sửa OCR,
+mask/inpaint/renderer; không chạm production journal hoặc output đã thành công.
+
+Chưa build/chạy EXE vì provider vẫn chặn kiểm thử source end-to-end. Cần quota
+khả dụng trở lại trước khi tiếp tục nghiệm thu; EXE cũ chưa chứa sửa đổi này.
+[Báo cáo](docs/AGY_PAGE67_QUOTA_REPORT.md), evidence
+`output/agy-page67-20261110T181103Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
 ## Khôi phục chọn lọc 0014 / 0029 / 0085 — 11/11/2026
 
 **CHƯA ĐẠT chất lượng toàn bộ ba ảnh.** Job `832ba2b6…`: hai NUMERIC_MISMATCH

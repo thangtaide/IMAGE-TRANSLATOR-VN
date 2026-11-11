@@ -146,6 +146,46 @@ class AGYTests(unittest.TestCase):
                 self.assertEqual(cm.exception.code, expected)
             self.assertEqual(len(self.runner.calls)-before, 1)
 
+    def test_individual_quota_string_is_suspended_in_batch_and_whole(self):
+        fixture = json.loads((ROOT / 'tests/fixtures/agy_individual_quota.json').read_text(encoding='utf-8'))
+        stdout = (json.dumps(fixture['stdout'])+'\n').encode()
+        for whole in (False, True):
+            with self.subTest(whole=whole), self.assertRaises(ProviderSuspended) as cm:
+                parse_response(stdout, ['r0'], fixture['exit_code'],
+                    stderr=fixture['stderr'].encode(), whole=whole)
+            self.assertEqual(cm.exception.code, 'QUOTA_EXCEEDED')
+        # The terminal error suffices: do not depend on stderr, reset duration,
+        # upgrade links, account IDs or the CLI's retryable suggestion.
+        for error in ['INDIVIDUAL QUOTA REACHED.', {'message':'Individual quota reached.'}]:
+            with self.subTest(error=error), self.assertRaises(ProviderSuspended) as cm:
+                parse_response(envelope([],status='ERROR',error=error), ['r0'], 0)
+            self.assertEqual(cm.exception.code, 'QUOTA_EXCEEDED')
+
+    def test_individual_quota_is_latched_without_translation_cache_or_retry(self):
+        provider = self.provider()
+        self.runner.failure = (3,envelope([],status='ERROR',error='Individual quota reached.'),b'')
+        service = self.service(provider)
+        for _ in range(2):
+            with self.assertRaises(ProviderSuspended) as cm:service.translate('你好 67','zh','quota')
+            self.assertEqual(cm.exception.code,'QUOTA_EXCEEDED')
+        self.assertEqual(len(self.runner.calls),1)
+        self.assertEqual(self.cache.connection.execute("SELECT count(*) FROM cache WHERE kind='translation'").fetchone()[0],0)
+        self.assertEqual(provider.last_diagnostic['parser_error_code'],'QUOTA_EXCEEDED')
+        self.assertEqual(provider.last_diagnostic['guard_decision'],'REJECT')
+
+    def test_quota_text_does_not_relax_success_schema_or_misclassify_generic_429(self):
+        rows=[{'id':'r0','text':'Individual quota reached.'}]
+        self.assertEqual(parse_response(envelope(rows),['r0'],0),[rows[0]['text']])
+        with self.assertRaises(ProviderSuspended) as cm:
+            parse_response(envelope(rows,status='ERROR',error='Individual quota reached.'),['r0'],3)
+        self.assertEqual(cm.exception.code,'QUOTA_EXCEEDED')
+        with self.assertRaises(ProviderSuspended) as cm:
+            parse_response(envelope([],status='ERROR',error={'code':429}),['r0'],3)
+        self.assertEqual(cm.exception.code,'RATE_LIMITED')
+        with self.assertRaises(OnlineProviderError) as cm:
+            parse_response(envelope([],status='ERROR',error='Unrelated quota question'),['r0'],3)
+        self.assertEqual(cm.exception.code,'PROVIDER_UNAVAILABLE')
+
     def test_model_unavailable_does_not_fallback(self):
         self.runner.failure = (1, envelope([], status='ERROR', error='invalid model selection'), b'')
         with self.assertRaises(OnlineProviderError) as cm:
@@ -172,7 +212,7 @@ class AGYTests(unittest.TestCase):
 
     def test_invalid_input_and_non_gemini_model_do_not_generate(self):
         with self.assertRaises(OnlineProviderError):
-            self.provider(model='claude-sonnet-4-6')
+            self.provider(model='unsupported-model')
         provider = self.provider()
         for texts in [[''], ['x'*6001], ['x'*2000]*12]:
             with self.assertRaises(OnlineProviderError):
@@ -233,15 +273,13 @@ class AGYTests(unittest.TestCase):
         self.assertEqual([r['text'] for r in prompt['regions']], ['你好 17'])
         self.assertNotIn('argos', provider.identity)
 
-    def test_numeric_error_keeps_guard_and_rejected_target_out_of_cache(self):
+    def test_online_numeric_content_is_trusted_and_cached_without_retranslation(self):
         self.runner.transform = lambda text: 'Xin chào 16'
         service = self.service()
         for _ in range(2):
-            with self.assertRaises(NumericMismatchError) as cm:
-                service.translate_regions(self.regions(['你好 15']), 'mismatch')
-            self.assertEqual(cm.exception.region_index, 0)
-        self.assertEqual(len(self.runner.calls), 2)
-        self.assertEqual(service.last_attempt['raw_translated_target'], 'Xin chào 16')
+            self.assertEqual(service.translate_regions(self.regions(['你好 15']), 'mismatch'), ['Xin chào 16'])
+        self.assertEqual(len(self.runner.calls), 1)
+        self.assertFalse(service.last_attempt['content_validation_applied'])
 
     def test_glossary_protection_reuses_existing_guard(self):
         service = self.service()
@@ -263,19 +301,21 @@ class AGYTests(unittest.TestCase):
             provider_page((260, 150),n).save(source / f'{n}.png')
         def runner(argv, payload, cwd, timeout, cancelled):
             if payload is not None and len(self.runner.calls) == 1:
-                self.runner.failure = (1, envelope([], status='ERROR', error={'code': 'RESOURCE_EXHAUSTED'}), b'')
+                self.runner.failure = (3, envelope([], status='ERROR', error='Individual quota reached.'), b'')
             return self.runner(argv, payload, cwd, timeout, cancelled)
         provider = self.provider()
         provider.runner = runner
         service = self.service(provider)
         # Preserve this test's two-request quota scenario under multi-page defaults.
         options = Options(source=str(source), output=str(self.root / 'export'), mode=MODE, agy_batch_regions=1)
-        manager = ProcessingManager(options, self.cache, ocr=OCRFixture(), service=service,
+        events = []
+        manager = ProcessingManager(options, self.cache, ocr=OCRFixture(), service=service, emit=events.append,
                                     diagnostic_root=self.root / 'diagnostics')
         result = manager.run()
         self.assertEqual(result['state'], 'paused_provider')
         self.assertEqual(result['completed'], 1)
         self.assertEqual(len(result['pending_paths']), 2)
+        self.assertTrue(any(e.get('type')=='provider_paused' and e.get('code')=='QUOTA_EXCEEDED' for e in events))
         output = manager.destination(source / '1.png')
         before = file_digest(output)
         receipt = self.cache.item(manager.job_id, str(source / '1.png'))
