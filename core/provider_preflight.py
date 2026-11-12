@@ -8,13 +8,18 @@ from providers.gemini_api import MODE, key_available
 class Preflight:
     code: str
     ready: bool
+    provider: str = MODE
 
     def event(self):
-        return dict(code=self.code, provider=MODE, phase='local_preflight',
+        return dict(code=self.code, provider=self.provider, phase='local_preflight',
                     request_sent=False, request_scope='next_action')
 
 
 def check_configuration(options):
+    if options.mode in ('AI Gemini AGY','AI Gemini AGY Whole Chapter') and options.ai_provider == 'groq':
+        from providers.groq_api import key_available as groq_key_available
+        ready=groq_key_available()
+        return Preflight('READY_UNVERIFIED' if ready else 'API_KEY_MISSING',ready,'GroqCloud')
     if options.mode != MODE:
         return Preflight('READY_UNVERIFIED', True)
     if not key_available():

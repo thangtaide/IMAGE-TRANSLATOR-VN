@@ -1,5 +1,19 @@
 # IMAGE TRANSLATOR VN
 
+## GroqCloud API — 12/11/2026
+
+Vào **Cài đặt → AI dịch thuật → GroqCloud**, chọn Qwen 3.8 27B (mặc định),
+GPT-OSS 120B hoặc GPT-OSS 20B, Lưu rồi dùng **AI — Batch/Toàn chương**.
+Key đọc từ `GROQ_API_KEY`, không lưu vào config. Không tự đổi provider/model.
+
+**ĐẠT kiểm thử cơ bản:** 201 test liên quan PASS; API Qwen thật và OCR/dịch/
+render một ảnh từ EXE PASS. Đã dùng 3/3 request (lượt đầu 429, hai lượt sau
+200). Whole Chapter và hai GPT-OSS kiểm bằng fixture, không benchmark/live thêm.
+EXE mới đã chạy GUI, Save/Cancel, mở lại và pipeline HTTP fixture sau sửa nhãn;
+pipeline live đã PASS trên bản trước sửa nhãn với cùng bytecode provider/OCR/render:
+`dist/ImageTranslatorVN-20261111T230840399194Z/ImageTranslatorVN-20261111T230840399194Z.exe`.
+Giữ `_internal`. [Hướng dẫn](docs/GROQCLOUD_SETUP.md) · [Báo cáo](docs/GROQCLOUD_REPORT.md).
+
 ## Sửa Sonnet tự trở về Gemini khi Bắt đầu — 12/11/2026
 
 **Bắt đầu dịch** dùng model đã Lưu trong Cài đặt và tạo journal mới; **Tiếp

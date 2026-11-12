@@ -118,6 +118,14 @@ class TranslationService:
 
     def _agy(self):
         if self.agy is None:
+            if self.options.ai_provider not in ('agy','groq'):
+                raise ProviderSuspended('INVALID_REQUEST','Nguồn AI không hợp lệ; chọn lại trong Cài đặt.')
+            if self.options.ai_provider == 'groq':
+                from providers.groq_api import GroqProvider
+                self.agy = GroqProvider(model=self.options.groq_model,timeout=self.options.agy_timeout,
+                    max_requests=self.options.agy_max_requests,checkpoint=self.control.checkpoint)
+                self.agy.retry_not_before=getattr(self,'groq_retry_not_before',0)
+                return self.agy
             self.agy = AGYProvider(executable=self.options.agy_executable, model=self.options.agy_model,
                 effort=self.options.agy_effort,
                 timeout=self.options.agy_timeout, max_requests=self.options.agy_max_requests,
@@ -421,6 +429,8 @@ class ProcessingManager:
         self.output.mkdir(parents=True, exist_ok=True)
 
     def api_diagnostic(self, record, exc, checkpoint, pending_count):
+        if self.options.mode == AGY_MODE and self.options.ai_provider=='groq':
+            record['groq_request']=dict(getattr(exc,'groq_diagnostic',{}) or {})
         if self.options.mode == GEMINI_API_MODE:
             from providers.gemini_diagnostics import clean
             info = dict(getattr(exc, 'gemini_api_diagnostic', None) or {})
@@ -474,10 +484,12 @@ class ProcessingManager:
             from providers.agy_models import bind_run_model
             bind_run_model(self.options,self.journal['options'])
             bind_run_model(self.service.options,self.journal['options'])
+            self.service.groq_retry_not_before=self.journal.get('groq_retry_not_before',0)
             if resuming and self.options.mode==AGY_MODE and getattr(self.service.agy,'model',None) is not None:
                 from providers.agy_models import selection
-                _,effort=selection(self.options.agy_model,self.options.agy_effort)
-                if (self.service.agy.model,self.service.agy.effort)!=(self.options.agy_model,effort):
+                _,effort=selection(self.options.agy_model,self.options.agy_effort) if self.options.ai_provider=='agy' else (None,None)
+                expected_model=self.options.groq_model if self.options.ai_provider=='groq' else self.options.agy_model
+                if (self.service.agy.model,self.service.agy.effort)!=(expected_model,effort):
                     raise ValueError('RESUME_MODEL_CHANGED: provider chưa khớp model/effort đã lưu; chưa gửi request.')
             self.resume_id = self.journal['id']
             self.emit({'type': 'resume_ready', 'resume_id': self.resume_id})
@@ -496,7 +508,7 @@ class ProcessingManager:
                 service_identity = self.service.identity()
                 if self.options.mode==AGY_MODE and self.service.agy is not None:
                     self.emit(dict(type='agy_run_selection',model=self.service.agy.model,
-                        effort=self.service.agy.effort or 'default',resumed=resuming))
+                        effort=self.service.agy.effort or 'default',resumed=resuming,ai_provider=self.options.ai_provider))
                 if self.prepared_chapter is not None:
                     service_identity = digest([service_identity, self.prepared_chapter.identity])
             except Exception as exc:
@@ -517,6 +529,8 @@ class ProcessingManager:
             # Verified IDs already encode every supported explicit effort;
             # adding a settings field must not invalidate legacy receipts.
             relevant.pop('agy_effort',None)
+            if self.options.ai_provider=='agy' or self.options.mode!=AGY_MODE:
+                relevant.pop('ai_provider',None);relevant.pop('groq_model',None)
             for key in ('gemini_api_model', 'gemini_api_timeout', 'gemini_api_max_requests', 'gemini_api_free_tier_confirmed'):
                 if self.options.mode != GEMINI_API_MODE or key == 'gemini_api_free_tier_confirmed':
                     relevant.pop(key, None)
@@ -586,7 +600,7 @@ class ProcessingManager:
                     if preflight_error is not None:
                         stage = preflight_stage
                         if self.options.mode == AGY_MODE and isinstance(preflight_error, ProviderSuspended):
-                            self.service.last_attempt = dict(provider='AGY Gemini', mode=AGY_MODE,
+                            self.service.last_attempt = dict(provider='GroqCloud' if self.options.ai_provider=='groq' else 'AGY Gemini', mode=AGY_MODE,
                                 model=getattr(getattr(preflight_error,'_agy_capture',None),'model','unknown'), model_identity=None)
                         raise preflight_error
                     stage = 'OCR'
@@ -637,7 +651,7 @@ class ProcessingManager:
                         'no_text_to_translate': not regions, 'numeric_validator_version': VALIDATOR_VERSION,
                         'translation_content_validation_applied': self.service.last_attempt.get('content_validation_applied'),
                         'translations': translations, 'warnings': warnings,
-                        'agy_selection':dict(model=self.options.agy_model,effort=getattr(self.service.agy,'effort',None) or 'default') if self.options.mode==AGY_MODE else None,
+                        'agy_selection':dict(provider=self.options.ai_provider,model=getattr(self.service.agy,'model',self.options.agy_model),effort=getattr(self.service.agy,'effort',None) or 'default') if self.options.mode==AGY_MODE else None,
                         'render_layout': renderer.last_layout}
                     def before_publish(temp):
                         if self.prepared_chapter is not None:
@@ -659,6 +673,8 @@ class ProcessingManager:
                     self.event(path, 'Hoàn thành', 100, index+1, len(files), output=str(destination), detail='\n'.join(warnings),
                                output_status=TRANSLATED_SUCCESS, image_index=image_indices[str(path)])
                 except ProviderSuspended as exc:
+                    if self.options.ai_provider=='groq' and exc.code=='RATE_LIMITED' and exc.retry_after:
+                        self.journal['groq_retry_not_before']=time.time()+exc.retry_after
                     # No erasing, fallback publication or failure counter on quota.
                     # Successful receipts remain immutable; retry starts at this page.
                     done_paths = {p['path'] for p in self.journal['pages'] if p['state'] == 'done'}
@@ -668,7 +684,7 @@ class ProcessingManager:
                         stage='TRANSLATION', error_code=exc.code, error_message=str(exc),
                         exception_type=type(exc).__name__, checkpoint_state='paused_provider',
                         fallback_action='NONE', **self.service.last_attempt)
-                    if self.options.mode == AGY_MODE:
+                    if self.options.mode == AGY_MODE and self.options.ai_provider=='agy':
                         from core.agy_error_evidence import error_reference
                         record.update(error_reference(exc))
                         from providers.agy_diagnostics import transport
@@ -686,12 +702,13 @@ class ProcessingManager:
                         phase=getattr(exc, 'phase', None), request_sent=getattr(exc, 'request_sent', None),
                         request_scope=getattr(exc, 'request_scope', None),
                         image_index=image_indices[str(path)], provider=self.service.last_attempt.get('provider'),
-                        model=getattr(getattr(exc,'_agy_capture',None),'model','unknown') if self.options.mode == AGY_MODE else None,
+                        model=self.options.groq_model if self.options.ai_provider=='groq' else getattr(getattr(exc,'_agy_capture',None),'model','unknown') if self.options.mode == AGY_MODE else None,
                         effort=getattr(getattr(exc,'_agy_capture',None),'context',{}).get('agy_effort') if self.options.mode==AGY_MODE else None,
                         agy_timeout=self.options.agy_timeout if self.options.mode == AGY_MODE else None,
                         agy_process_started=getattr(getattr(exc,'_agy_capture',None),'started',None) if self.options.mode == AGY_MODE else None,
-                        **(error_reference(exc) if self.options.mode == AGY_MODE else {}),
+                        **(error_reference(exc) if self.options.mode == AGY_MODE and self.options.ai_provider=='agy' else {}),
                         gemini_api_request=record.get('gemini_api_request'),
+                        groq_request=record.get('groq_request'),
                         pending_paths=pending_paths))
                     state = 'paused_provider'
                     break
@@ -743,7 +760,7 @@ class ProcessingManager:
                         retry_count=attempt.get('retry_count', 0), fallback_action=status, output_status=status,
                         output_path=str(output) if output else None, checkpoint_state=checkpoint,
                         fallback_error=fallback_error)
-                    if self.options.mode == AGY_MODE:
+                    if self.options.mode == AGY_MODE and self.options.ai_provider=='agy':
                         from core.agy_error_evidence import error_reference
                         record.update(error_reference(exc))
                         from providers.agy_diagnostics import transport
@@ -755,7 +772,7 @@ class ProcessingManager:
                         'stage', 'error_code', 'exception_type', 'error_message', 'provider', 'mode',
                         'output_status', 'output_path', 'checkpoint_state', 'fallback_error')}
                     review.update(diagnostic_path=log_path, diagnostic_error=self.diagnostics.error)
-                    if self.options.mode == AGY_MODE: review.update(error_reference(exc))
+                    if self.options.mode == AGY_MODE and self.options.ai_provider=='agy': review.update(error_reference(exc))
                     self.review_pages.append(review)
                     self.cache.checkpoint(self.job_id, str(path), checkpoint, str(output) if output else '',
                                           fingerprint, json.dumps(review, ensure_ascii=False))

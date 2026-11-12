@@ -52,6 +52,8 @@ class Options:
     agy_executable: str = ''
     agy_model: str = 'gemini-3.8-flash-low'
     agy_effort: str = ''  # Legacy empty: infer Gemini from exact ID; other models use model default.
+    ai_provider: str = 'agy'
+    groq_model: str = 'qwen/qwen3.8-27b'
     agy_timeout: int = 300
     agy_max_requests: int = 64
     agy_batch_chars: int = 3000

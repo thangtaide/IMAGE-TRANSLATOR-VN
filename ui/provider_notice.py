@@ -66,6 +66,24 @@ class ProviderNotice(QWidget):
         super().hide()
 
     def show_error(self, event):
+        if event.get('provider')=='GroqCloud' or event.get('groq_request'):
+            from providers.groq_api import MODEL_IDS
+            known={'API_KEY_MISSING','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE','INVALID_REQUEST',
+                   'RATE_LIMITED','PROVIDER_UNAVAILABLE','TIMEOUT','NETWORK_ERROR','INVALID_RESPONSE','REQUEST_BUDGET'}
+            code=event.get('code') if event.get('code') in known else 'PROVIDER_UNAVAILABLE'
+            self.last_code=code;self.active=True
+            text={'API_KEY_MISSING':'Chưa có GROQ_API_KEY trong môi trường Windows.',
+                'AUTH_REQUIRED':'GroqCloud từ chối API key. Kiểm tra GROQ_API_KEY.',
+                'MODEL_UNAVAILABLE':'Model không tồn tại hoặc chưa được cấp quyền; không tự đổi model.',
+                'RATE_LIMITED':'GroqCloud giới hạn tốc độ/quota. Chỉ chủ động Tiếp tục sau Retry-After nếu có.'}.get(code,
+                'Giữ checkpoint và kết quả đã xong; kiểm tra cấu hình/kết nối rồi chủ động Tiếp tục.')
+            delay=event.get('retry_after')
+            if type(delay) in (int,float) and 0<=delay<=86400:text+=' Retry-After: '+str(delay)+' giây.'
+            self.title.setText('GroqCloud · '+code);self.summary.setText(text);self.message.setText(text)
+            self.settings.setText('Mở Cài đặt AI');self.settings.setVisible(code in ('API_KEY_MISSING','AUTH_REQUIRED'))
+            model=event.get('model') or (event.get('groq_request') or {}).get('model')
+            self.log.appendPlainText('GroqCloud · '+code+(' · '+model if isinstance(model,str) and model in MODEL_IDS else ''))
+            self.show();return
         # Never echo arbitrary detail, paths, model output or unknown error strings.
         self.active = True
         known = {'API_KEY_MISSING', 'FREE_TIER_UNCONFIRMED', 'READY_UNVERIFIED', 'AUTH_REQUIRED',

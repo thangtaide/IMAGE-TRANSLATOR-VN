@@ -38,8 +38,9 @@ class WholeChapterWorker(QThread):
             self.control.checkpoint()
             from core.runtime import prepare_inference_runtime
             prepare_inference_runtime()
-            from core.whole_chapter import WholeChapterJob, AGYWholeChapterTranslator
-            adapter = AGYWholeChapterTranslator(self.options, self.whole_timeout) if self.translator_kind == 'agy' else None
+            from core.whole_chapter import WholeChapterJob, AGYWholeChapterTranslator, GroqWholeChapterTranslator
+            adapter = (GroqWholeChapterTranslator(self.options,self.whole_timeout) if self.translator_kind=='groq' else
+                       AGYWholeChapterTranslator(self.options, self.whole_timeout) if self.translator_kind == 'agy' else None)
             WholeChapterJob(source, self.workspace, options=self.options, input_paths=paths,
                 control=self.control, emit=self.event.emit, translator=adapter).run(
                     allow_translation=self.allow_translation, confirmed_manifest_hash=self.confirmed_manifest_hash)
@@ -79,10 +80,12 @@ class WholeChapterDialog(QDialog):
         layout = QVBoxLayout(self)
         row = QHBoxLayout(); self.translator_label = QLabel('Phương thức'); row.addWidget(self.translator_label)
         self.translator = QComboBox(); self.translator.addItem('Argos Offline', 'argos'); self.translator.addItem('AGY CLI', 'agy')
+        self.translator.addItem('GroqCloud API','groq')
+        if self.options.ai_provider=='groq':self.translator.setCurrentIndex(self.translator.findData('groq'))
         if translator_kind:
             self.translator.setCurrentIndex(self.translator.findData(translator_kind))
             self.translator.hide(); self.translator_label.hide()
-        row.addWidget(self.translator); row.addWidget(QLabel('Timeout AGY (giây)'))
+        row.addWidget(self.translator); row.addWidget(QLabel('Timeout AI (giây)'))
         self.timeout = QSpinBox(); self.timeout.setRange(10, 1800); self.timeout.setValue(600); row.addWidget(self.timeout)
         layout.addLayout(row)
         self.note = QLabel(); self.note.setWordWrap(True); layout.addWidget(self.note)
@@ -137,30 +140,35 @@ class WholeChapterDialog(QDialog):
 
     def change_translator(self, *_):
         self.clear_intent(); self.allow.setChecked(False)
-        agy = self.translator.currentData() == 'agy'
+        agy = self.translator.currentData() in ('agy','groq')
         self.allow.setVisible(not agy); self.confirm.setVisible(agy); self.timeout.setEnabled(agy)
         self.start.setText('Dịch lại toàn bộ chương (lượt mới)…' if agy else 'Chạy QA mới')
         self.note.setText(('Whole Chapter — Single AGY Invocation. Gom toàn bộ OCR, không chia batch, không chờ 5–10 giây. '
-            'Model: ' + self.options.agy_model + '. Có thể tiêu thụ quota; chỉ gọi sau hộp xác nhận riêng.' if agy else
+            'Model: ' + (self.options.groq_model if self.translator.currentData()=='groq' else self.options.agy_model) + '. Có thể tiêu thụ quota; chỉ gọi sau hộp xác nhận riêng.' if agy else
             'Argos offline, một worker OCR; dịch từng vùng nội bộ, không phải một request AI.') +
             ('\nDùng đúng chương/ảnh đã chọn. Cache hợp lệ được đọc lại; chỉ tải ảnh còn thiếu khi access/download gate cho phép. '
              'Kết quả riêng, không ghi đè kết quả Batch.' if self.bound_context else
              '\nChọn ảnh chương đã có; không tải ảnh. Kết quả mới riêng trong output/stage3g-…; không đổi provider cửa sổ chính.'))
+        if self.translator.currentData()=='groq':
+            self.note.setText('GroqCloud: gom văn bản OCR của chương thành một request API, không gửi ảnh. Model: '+self.options.groq_model+
+                '. Cần xác nhận riêng sau OCR. Nếu dữ liệu quá giới hạn request, dừng rõ ràng; không chia ngầm hoặc cắt nội dung.')
 
     def update_confirm(self):
-        self.confirm.setEnabled(self.translator.currentData() == 'agy' and self.workspace is not None
+        self.confirm.setText('Xác nhận dịch bằng '+('GroqCloud' if self.translator.currentData()=='groq' else 'AGY')+'…')
+        self.confirm.setEnabled(self.translator.currentData() in ('agy','groq') and self.workspace is not None
             and self.ready_for_confirmation and self.manifest_info is not None and self.manifest_info['regions'] > 0 and not self.attempt_used
             and not (self.worker and self.worker.isRunning()))
 
     def confirm_agy(self):
         if not self.confirm.isEnabled() or not self.manifest_info: return
         info = self.manifest_info
-        box = QMessageBox(self); box.setWindowTitle('Xác nhận Whole Chapter AGY')
-        box.setText('Bạn sắp gửi toàn bộ văn bản OCR của chương tới AGY CLI trong một lượt dịch.\n\n'
+        provider='GroqCloud API' if self.translator.currentData()=='groq' else 'AGY CLI'
+        box = QMessageBox(self); box.setWindowTitle('Xác nhận Whole Chapter '+provider)
+        box.setText('Bạn sắp gửi toàn bộ văn bản OCR của chương tới '+provider+' trong một lượt dịch.\n\n'
             f"Số trang: {info['pages']}\nSố vùng OCR: {info['regions']}\nTổng ký tự nguồn: {info['source_characters']}\n\n"
             'Thao tác này có thể tiêu thụ quota. Ứng dụng không tự retry/fallback nếu thất bại.\nBạn có muốn tiếp tục?')
         cancel = box.addButton('Hủy', QMessageBox.RejectRole)
-        accept = box.addButton('Xác nhận dịch bằng AGY', QMessageBox.AcceptRole)
+        accept = box.addButton('Xác nhận dịch bằng '+provider, QMessageBox.AcceptRole)
         box.setDefaultButton(cancel); box.setEscapeButton(cancel); box.exec()
         if box.clickedButton() == accept:
             self.begin(agy_confirmed=True)
@@ -175,7 +183,7 @@ class WholeChapterDialog(QDialog):
 
     def start_new(self):
         if self.worker and self.worker.isRunning(): return
-        if self.translator.currentData()=='agy':
+        if self.translator.currentData() in ('agy','groq'):
             box=QMessageBox(self); box.setWindowTitle('Dịch lại toàn bộ chương')
             box.setText('Chuẩn bị lượt mới, không tiếp job cũ hoặc dùng lại bản dịch AGY cũ. '
                         'Kết quả cũ giữ nguyên. Có thể tiêu thụ quota khi xác nhận dịch sau OCR. Tiếp tục?')
@@ -189,7 +197,7 @@ class WholeChapterDialog(QDialog):
         if self.worker and self.worker.isRunning(): return
         stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         self.manifest_info = None; self.attempt_used = False; self.confirm.setEnabled(False)
-        self.counts.setText('Đang chuẩn bị lượt mới độc lập; chưa gửi AGY.')
+        self.counts.setText('Đang chuẩn bị lượt mới độc lập; chưa gửi AI.')
         self.workspace = ROOT / 'output' / ('stage3g-' + stamp + '-' + uuid4().hex[:8])
         if self.fresh_plan:
             from core.run_cache import plain_path
@@ -234,11 +242,14 @@ class WholeChapterDialog(QDialog):
             if data.get('version') != 1: raise ValueError()
             descriptor = data.get('translator', dict(kind='argos'))
             kind = descriptor['kind']
-            if kind not in ('argos', 'agy') or self.fixed_translator and kind != self.fixed_translator:
+            if kind not in ('argos', 'agy','groq') or self.fixed_translator and kind != self.fixed_translator:
                 raise ValueError()
             self.options = Options.from_dict(data['options'])
             self.translator.setCurrentIndex(self.translator.findData(kind))
-            if kind == 'agy':
+            if kind == 'groq':
+                self.options.ai_provider='groq';self.options.groq_model=descriptor['model']
+                self.timeout.setValue(descriptor['timeout']);self.change_translator()
+            elif kind == 'agy':
                 self.options.agy_executable = descriptor['executable']; self.options.agy_model = descriptor['model']
                 self.options.agy_effort = descriptor.get('effort','')
                 self.timeout.setValue(descriptor['timeout']); self.change_translator()
@@ -260,7 +271,7 @@ class WholeChapterDialog(QDialog):
 
     def begin(self, *, agy_confirmed=False):
         if self.worker and self.worker.isRunning(): return
-        agy = self.translator.currentData() == 'agy'
+        agy = self.translator.currentData() in ('agy','groq')
         confirmed_hash = self.manifest_info['manifest_hash'] if agy_confirmed and self.manifest_info else None
         self.ready_for_confirmation = False
         self.worker = WholeChapterWorker(self.source.text(), self.workspace, self.options,
@@ -273,7 +284,7 @@ class WholeChapterDialog(QDialog):
 
     def set_running(self, running):
         for widget in (self.start, self.restore, self.source, self.choose, self.allow, self.translator): widget.setEnabled(not running)
-        self.timeout.setEnabled(not running and self.translator.currentData() == 'agy')
+        self.timeout.setEnabled(not running and self.translator.currentData() in ('agy','groq'))
         self.resume.setEnabled(not running and self.workspace is not None)
         self.cancel.setEnabled(running)
         self.open_result.setEnabled(not running and self.workspace is not None and (self.workspace/'rendered').is_dir())
@@ -284,9 +295,10 @@ class WholeChapterDialog(QDialog):
             self.status.setText(f"{event['stage']} • {event.get('index', 0)}/{event.get('total', 0)} • Bước chuẩn bị chưa gọi AGY")
         elif event.get('type') == 'whole_manifest_ready':
             self.manifest_info = event; self.attempt_used = event['agy_attempt_used']
+            if self.translator.currentData()=='groq':self.attempt_used=False
             self.counts.setText(f"Đã đọc chữ • {event['pages']} trang • {event['regions']} vùng • {event['source_characters']} ký tự nguồn")
-            if self.translator.currentData() == 'agy':
-                self.status.setText('Đã chuẩn bị toàn bộ chữ. AGY mới cần xác nhận riêng; Tiếp tục chỉ kiểm tra dữ liệu đã lưu.')
+            if self.translator.currentData() in ('agy','groq'):
+                self.status.setText('Đã chuẩn bị toàn bộ chữ. Request AI mới cần xác nhận riêng; Tiếp tục chỉ kiểm tra dữ liệu đã lưu.')
         elif event.get('type') == 'whole_agy_running':
             self.attempt_used = True; self.status.setText(event['stage']); self.confirm.setEnabled(False)
         elif event.get('type') == 'whole_progress':
@@ -295,6 +307,7 @@ class WholeChapterDialog(QDialog):
         elif event.get('type') == 'whole_finished':
             self.attempt_used = bool(event.get('agy_attempt_used', self.attempt_used))
             self.ready_for_confirmation = event['state'] == 'awaiting_translation'
+            if self.translator.currentData()=='groq' and self.ready_for_confirmation:self.attempt_used=False
             code = event.get('error_code', '')
             reasons = {
                 'AGY_NOT_FOUND':'Không tìm thấy AGY; kiểm tra đường dẫn trong Cài đặt.',
@@ -326,6 +339,9 @@ class WholeChapterDialog(QDialog):
                 'WHOLE_RECIPE_OR_SOURCE_CHANGED':'Nguồn/cấu hình/identity khác journal; không sửa hash hoặc chuyển provider để ép resume.',
                 'WHOLE_AGY_RESPONSE_CHANGED':'Receipt phản hồi AGY không khớp; không dùng hoặc tự gửi lại.',
                 'NUMERIC_MISMATCH':'Bản dịch bị numeric guard từ chối; không sửa số hoặc gửi lại AGY.'}
+            if self.translator.currentData()=='groq':
+                for remote in ('API_KEY_MISSING','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE','RATE_LIMITED','PROVIDER_UNAVAILABLE','TIMEOUT','NETWORK_ERROR','INVALID_REQUEST','INVALID_RESPONSE'):
+                    reasons[remote]='GroqCloud: '+remote+'. Giữ checkpoint; kiểm tra key/model/API rồi chủ động Tiếp tục. Không tự retry hoặc đổi nguồn.'
             summary = (f"{event['state']} • {code}\n{reasons.get(code, 'Dữ liệu đã lưu được giữ; xem journal nếu bị chặn.')}\n"
                        f"Vùng qua guard lượt này: {event.get('validated_regions', '?')} • Trang render mới: {event.get('completed', 0)} • "
                        f"Bỏ qua receipt hợp lệ: {event.get('skipped', 0)} • {event.get('elapsed_seconds', 0):.1f}s\n{self.workspace}")

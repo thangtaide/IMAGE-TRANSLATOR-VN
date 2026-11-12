@@ -5,6 +5,8 @@
   "mode": "Offline",
   "agy_model": "gemini-3.8-flash-low",
   "agy_effort": "low",
+  "ai_provider": "agy",
+  "groq_model": "qwen/qwen3.8-27b",
   "online_provider": "MyMemory",
   "offline_provider": "Argos",
   "allow_online_fallback": false,

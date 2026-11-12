@@ -853,8 +853,8 @@ class ComicSourcesPanel(QWidget):
         elif kind == 'pipeline' and event.get('pipeline_event_type') == 'gemini_api_usage':
             from ui.provider_notice import gemini_usage_text
             self.policy.setText(gemini_usage_text(event))
-        elif kind == 'pipeline' and event.get('pipeline_event_type') in ('agy_batch', 'gemini_api_batch'):
-            provider = 'Gemini API' if event['pipeline_event_type'] == 'gemini_api_batch' else 'AGY'
+        elif kind == 'pipeline' and event.get('pipeline_event_type') in ('agy_batch', 'gemini_api_batch','groq_batch'):
+            provider = 'GroqCloud' if event['pipeline_event_type']=='groq_batch' else 'Gemini API' if event['pipeline_event_type'] == 'gemini_api_batch' else 'AGY'
             self.status.setText(f"{provider}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
             if row is not None:
                 self.table.item(row, 5).setText('Đang dịch batch nhiều trang')

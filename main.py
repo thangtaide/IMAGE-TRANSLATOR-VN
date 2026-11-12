@@ -9,6 +9,10 @@ from core.storage import configure_logging
 def main() -> int:
     initialize()
     configure_logging()
+    if '--groq-check' in sys.argv:
+        sys.argv.remove('--groq-check')
+        from scripts.validate_groq import main as groq_check
+        return groq_check()
     if '--ai-model-settings-check' in sys.argv:
         sys.argv.remove('--ai-model-settings-check')
         from scripts.validate_ai_model_settings import main as model_settings_main

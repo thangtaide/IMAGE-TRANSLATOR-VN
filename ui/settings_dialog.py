@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from PySide6.QtCore import QThread, Signal
 
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QDoubleSpinBox, QVBoxLayout,
@@ -8,6 +10,25 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
 
 from core.types import Options
 from providers.agy_models import MODELS,selection,identifier
+
+
+class GroqConnectionWorker(QThread):
+    result = Signal(dict)
+
+    def __init__(self, model, parent=None):
+        super().__init__(parent);self.model=model
+
+    def run(self):
+        from providers.groq_api import GroqProvider
+        provider=None
+        try:
+            provider=GroqProvider(model=self.model,max_requests=1,timeout=30)
+            provider.translate('你好','zh')
+            self.result.emit(dict(ok=True,code='SUCCESS'))
+        except Exception as exc:
+            self.result.emit(dict(ok=False,code=getattr(exc,'code','NETWORK_ERROR'),retry_after=getattr(exc,'retry_after',None)))
+        finally:
+            if provider:provider.close()
 
 
 class SettingsDialog(QDialog):
@@ -89,14 +110,31 @@ class SettingsDialog(QDialog):
         self.agy_executable = QLineEdit(options.agy_executable)
         self.agy_executable.setPlaceholderText('Trống: tìm AGY đã cài; không thay PATH hệ thống')
         form.addRow('AGY executable (.exe)', self.agy_executable)
-        self.ai_group=QGroupBox('AI dịch thuật (AGY)')
+        self.ai_group=QGroupBox('AI dịch thuật')
         ai_form=QFormLayout(self.ai_group);ai_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.ai_source=QComboBox();self.ai_source.addItem('AGY CLI','agy');self.ai_source.addItem('GroqCloud','groq')
+        if self.ai_source.findData(options.ai_provider)<0:self.ai_source.addItem('Nguồn đã lưu cần kiểm tra','unsupported')
+        self.ai_source.setCurrentIndex(self.ai_source.findData(options.ai_provider) if self.ai_source.findData(options.ai_provider)>=0 else self.ai_source.findData('unsupported'))
+        ai_form.addRow('Nguồn dịch',self.ai_source)
+        self.agy_controls=QWidget();agy_form=QFormLayout(self.agy_controls);agy_form.setContentsMargins(0,0,0,0)
         self.ai_model=QComboBox();self.ai_model.setObjectName('aiModel');self.ai_model.setMinimumContentsLength(18)
         for choice in MODELS:self.ai_model.addItem(choice.label,choice.key)
         self.ai_effort=QComboBox();self.ai_effort.setObjectName('aiEffort')
         self.ai_description=QLabel();self.ai_description.setWordWrap(True)
-        ai_form.addRow('Model AI',self.ai_model);ai_form.addRow('Mức suy luận',self.ai_effort)
-        ai_form.addRow(self.ai_description);form.insertRow(0,self.ai_group);form.insertRow(1,self.api_group)
+        agy_form.addRow('Model AI',self.ai_model);agy_form.addRow('Mức suy luận',self.ai_effort)
+        agy_form.addRow(self.ai_description);ai_form.addRow(self.agy_controls)
+        self.groq_controls=QWidget();groq_form=QFormLayout(self.groq_controls);groq_form.setContentsMargins(0,0,0,0)
+        from providers.groq_api import MODELS as GROQ_MODELS
+        self.groq_model=QComboBox()
+        for name,value in GROQ_MODELS:self.groq_model.addItem(name,value)
+        self.groq_model.setCurrentIndex(self.groq_model.findData(options.groq_model))
+        self.groq_status=QLabel();self.groq_status.setWordWrap(True)
+        self.groq_check=QPushButton('Kiểm tra kết nối');self.groq_check.setToolTip('Gửi một đoạn chữ thử ngắn tới GroqCloud, có thể tiêu thụ hạn mức.')
+        groq_form.addRow('Model Groq',self.groq_model);groq_form.addRow(self.groq_status);groq_form.addRow(self.groq_check)
+        ai_form.addRow(self.groq_controls);self.connection_worker=None;self.groq_retry_until=0
+        self.ai_source.currentIndexChanged.connect(self.update_ai_provider)
+        self.groq_check.clicked.connect(self.check_groq_connection);self.update_ai_provider()
+        form.insertRow(0,self.ai_group);form.insertRow(1,self.api_group)
         self.ai_model.currentIndexChanged.connect(self.update_ai_efforts)
         self.ai_effort.currentIndexChanged.connect(self.update_ai_description)
         try:
@@ -166,6 +204,35 @@ class SettingsDialog(QDialog):
         if path:
             self.font.setText(path)
 
+    def update_ai_provider(self):
+        from providers.groq_api import key_available
+        groq=self.ai_source.currentData()=='groq'
+        self.agy_controls.setVisible(not groq);self.groq_controls.setVisible(groq)
+        self.groq_status.setText('GROQ_API_KEY: '+('đã có (chưa kiểm tra API).' if key_available() else 'chưa có trong môi trường.'))
+
+    def check_groq_connection(self):
+        if self.connection_worker and self.connection_worker.isRunning():return
+        if time.time()<self.groq_retry_until:
+            self.groq_status.setText('GroqCloud: chờ Retry-After còn '+str(max(1,int(self.groq_retry_until-time.time())))+' giây.');return
+        self.connection_worker=GroqConnectionWorker(self.groq_model.currentData(),self)
+        self.groq_check.setEnabled(False);self.buttons.setEnabled(False)
+        self.groq_status.setText('Đang kiểm tra kết nối GroqCloud…')
+        self.connection_worker.result.connect(self.groq_connection_result)
+        self.connection_worker.finished.connect(lambda:(self.groq_check.setEnabled(True),self.buttons.setEnabled(True)))
+        self.connection_worker.start()
+
+    def groq_connection_result(self, result):
+        allowed={'SUCCESS','API_KEY_MISSING','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE','INVALID_REQUEST',
+                 'RATE_LIMITED','TIMEOUT','NETWORK_ERROR','INVALID_RESPONSE','PROVIDER_UNAVAILABLE'}
+        code=result.get('code') if result.get('code') in allowed else 'PROVIDER_UNAVAILABLE'
+        delay=result.get('retry_after')
+        if code=='RATE_LIMITED' and type(delay) in (int,float) and 0<delay<=86400:self.groq_retry_until=time.time()+delay
+        self.groq_status.setText('GroqCloud: '+('kết nối và dịch thử thành công.' if code=='SUCCESS' else code+'; không tự gửi lại hoặc chuyển model.'))
+
+    def reject(self):
+        if self.connection_worker and self.connection_worker.isRunning():return
+        super().reject()
+
     def update_ai_efforts(self):
         self.ai_effort.blockSignals(True);self.ai_effort.clear()
         choice=next((c for c in MODELS if c.key==self.ai_model.currentData()),None)
@@ -192,6 +259,7 @@ class SettingsDialog(QDialog):
             self.mask.setText(path)
 
     def accept(self) -> None:
+        if self.connection_worker and self.connection_worker.isRunning():return
         glossary = {}
         try:
             for line in self.glossary.toPlainText().splitlines():
@@ -202,9 +270,15 @@ class SettingsDialog(QDialog):
                     glossary[key.strip()] = value.strip()
             if self.fields['font_min'].value() > self.fields['font_max'].value():
                 raise ValueError('Cỡ chữ tối thiểu phải ≤ cỡ tối đa')
-            effort=self.ai_effort.currentData()
-            model=identifier(self.ai_model.currentData(),effort)
-            selection(model,effort)
+            if self.ai_source.currentData() not in ('agy','groq'):raise ValueError('Chọn nguồn AI hợp lệ trước khi Lưu.')
+            if self.ai_source.currentData()=='groq':
+                from providers.groq_api import MODEL_IDS
+                if self.groq_model.currentData() not in MODEL_IDS:raise ValueError('Chọn một model Groq hợp lệ.')
+                model,effort=self.options.agy_model,self.options.agy_effort
+            else:
+                effort=self.ai_effort.currentData()
+                model=identifier(self.ai_model.currentData(),effort)
+                selection(model,effort)
         except ValueError as exc:
             QMessageBox.warning(self, 'Cài đặt chưa hợp lệ', str(exc))
             return
@@ -215,6 +289,8 @@ class SettingsDialog(QDialog):
         self.options.agy_executable = self.agy_executable.text().strip()
         self.options.agy_model = model
         self.options.agy_effort = effort
+        self.options.ai_provider=self.ai_source.currentData()
+        self.options.groq_model=self.groq_model.currentData()
         self.options.gemini_api_free_tier_confirmed = self.gemini_api_free.isChecked()
         self.options.allow_online_fallback = self.allow_fallback.isChecked()
         for name, combo in self.combos.items():

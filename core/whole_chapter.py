@@ -186,6 +186,28 @@ class AGYWholeChapterTranslator:
             provider.close()
 
 
+class GroqWholeChapterTranslator(AGYWholeChapterTranslator):
+    """Same manifest/receipt lifecycle, one official HTTP request, no CLI."""
+    def __init__(self, options, timeout=300, *, client=None):
+        from providers.groq_api import GroqProvider
+        self.model=options.groq_model;self.timeout=min(300,timeout)
+        self.http=GroqProvider(model=self.model,timeout=self.timeout,max_requests=1,client=client)
+        self.identity='whole-'+self.http.identity
+        self.provider=_GuardIdentity(self.identity);self.provider.online=True;self.provider.engine_name='GroqCloud'
+        self.descriptor=dict(kind='groq',model=self.model,timeout=self.timeout)
+        self.last_capture=None;self.error_context={}
+
+    def translate_manifest(self, manifest, request, workspace, control):
+        self.http.checkpoint=control.checkpoint
+        languages={row['language'] for row in request}
+        if len(languages)!=1:raise ChapterError('WHOLE_MIXED_LANGUAGE')
+        try:
+            targets=self.http.translate_batch([r['text'] for r in request],next(iter(languages)),
+                item_ids=[r['id'] for r in request],whole=True)
+            return dict(manifest_hash=manifest['content_hash'],translations=[dict(id=r['id'],text=t) for r,t in zip(request,targets)])
+        finally:self.http.close()
+
+
 class PreparedChapter:
     def __init__(self, owner, manifest, accepted):
         self.owner, self.manifest, self.accepted = owner, manifest, accepted
@@ -245,10 +267,14 @@ class WholeChapterJob:
         if self.path.exists() and isinstance(self.translator,AGYWholeChapterTranslator):
             saved=verify(read_json(self.path))
             descriptor=saved.get('translator',{})
-            if descriptor.get('kind')=='agy':
+            if descriptor.get('kind')=='groq':
+                self.options=replace(self.options,ai_provider='groq',groq_model=descriptor['model'])
+                if not isinstance(self.translator,GroqWholeChapterTranslator) or self.translator.model!=descriptor['model']:
+                    self.translator=GroqWholeChapterTranslator(self.options,descriptor['timeout'])
+            elif descriptor.get('kind')=='agy':
                 pinned=(descriptor['model'],descriptor.get('effort',''))
-                if (self.options.agy_model,self.options.agy_effort)!=pinned:
-                    self.options=replace(self.options,agy_model=pinned[0],agy_effort=pinned[1],
+                if (self.options.agy_model,self.options.agy_effort)!=pinned or isinstance(self.translator,GroqWholeChapterTranslator):
+                    self.options=replace(self.options,ai_provider='agy',agy_model=pinned[0],agy_effort=pinned[1],
                         agy_executable=descriptor['executable'])
                     self.translator=AGYWholeChapterTranslator(self.options,descriptor['timeout'])
         self.record = None
@@ -388,7 +414,14 @@ class WholeChapterJob:
             self.record['state'] = 'translation'; self.save()
             self.progress('TRANSLATION', len(values), len(flat))
             if pending and is_agy and saved_response is None and self.record.get('agy_attempt_used'):
-                raise ChapterError('WHOLE_AGY_ATTEMPT_ALREADY_USED')
+                if isinstance(adapter,GroqWholeChapterTranslator):
+                    if allow_translation and self.confirmed_manifest_hash==manifest['content_hash']:
+                        self.record['agy_attempt_used']=False;self.save()
+                    else:
+                        self.record['state']='awaiting_translation';self.save()
+                        return dict(state='awaiting_translation',pages=len(pages),regions=len(flat),pending_regions=len(pending),source_characters=manifest['source_characters'],manifest_hash=manifest['content_hash'])
+                else:
+                    raise ChapterError('WHOLE_AGY_ATTEMPT_ALREADY_USED')
             if pending and not allow_translation and saved_response is None:
                 self.record['state'] = 'awaiting_translation'; self.save()
                 return dict(state='awaiting_translation', pages=len(pages), regions=len(flat), pending_regions=len(pending),
@@ -421,7 +454,7 @@ class WholeChapterJob:
                             preflight_step='AUTOMATIC_EXTENSIONS')
                         # Pure local preflight after consent; never reset a historical budget.
                         try:
-                            check_automatic_extensions()
+                            if not isinstance(adapter,GroqWholeChapterTranslator):check_automatic_extensions()
                         except Exception as exc:
                             capture = AGYErrorCapture(adapter.model, adapter.timeout, adapter.error_context)
                             capture.failure(exc, 'APP_PREFLIGHT'); exc._agy_capture = capture
@@ -429,7 +462,8 @@ class WholeChapterJob:
                         # Commit before process creation. Crash/timeout still consumes this journal's attempt.
                         self.record.update(agy_attempt_used=True, agy_manifest_hash=manifest['content_hash'])
                         self.save()
-                        self.emit(dict(type='whole_agy_running', stage='AGY đang xử lý toàn chương — một invocation'))
+                        self.emit(dict(type='whole_agy_running', stage=('GroqCloud' if isinstance(adapter,GroqWholeChapterTranslator) else 'AGY')+' đang xử lý toàn chương — một request'))
+                        if isinstance(adapter,GroqWholeChapterTranslator):adapter.http.retry_not_before=self.record.get('groq_retry_not_before',0)
                         response = adapter.translate_manifest(manifest, request, self.workspace, control)
                         self.check_manifest(manifest, sources=True)
                         saved_response = parse_response(json.dumps(response, ensure_ascii=False), manifest, ids)
@@ -516,6 +550,8 @@ class WholeChapterJob:
                     capture.finish(result['state'])
                     result.update(error_reference(exc))
             if self.record:
+                if isinstance(self.translator,GroqWholeChapterTranslator) and getattr(exc,'code',None)=='RATE_LIMITED' and exc.retry_after:
+                    self.record['groq_retry_not_before']=time.time()+exc.retry_after
                 observed = getattr(exc, 'agy_diagnostic', None)
                 if isinstance(self.translator, AGYWholeChapterTranslator) and isinstance(observed, dict):
                     from providers.agy_diagnostics import sanitize

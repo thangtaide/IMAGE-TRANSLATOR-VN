@@ -1,5 +1,29 @@
 # Trạng thái Image Translator VN
 
+## GroqCloud chính thức, test cơ bản và EXE — 12/11/2026
+
+Đã thêm nguồn GroqCloud và ba model cố định trong Settings hiện có. Dùng
+requests/HTTPS và strict JSON schema, chỉ gửi OCR text. Key lấy từ environment
+process hoặc đúng biến User Windows, không lưu/log/bundle key. Reuse Batch/
+Whole, snapshot provider/model, tách identity cache, 429/Retry-After dừng an
+toàn không auto retry/fallback. Không đổi OCR/mask/inpaint/renderer/layout.
+
+201 testcase liên quan PASS (200 regression và Groq cuối 14, trùng 13).
+Source/EXE GUI Save/Cancel, Groq/model, popup tối, DPI 100/150 và mở lại PASS.
+Groq thật 3/3 request: đầu 429, sau giới hạn trần output đoạn nhỏ 512 token
+kết nối Qwen 200; ảnh OCR → Qwen → render từ EXE 200, 1/1 PASS. Không suy
+đoán billing hoặc nguyên nhân duy nhất của 429. Không gọi thêm; không AGY thật.
+Whole live/GPT-OSS live chưa chạy, chỉ fixture; không phải full repo regression.
+
+Đã build.bat và chạy EXE mới:
+`dist/ImageTranslatorVN-20261111T230840399194Z/ImageTranslatorVN-20261111T230840399194Z.exe`.
+Build lại sau sửa nhãn tiến trình Gemini → Groq, 56 test PASS; bản cuối GUI/
+reopen/DPI/HTTP fixture PASS. Live chạy ở build đầu; bytecode provider/pipeline/
+OCR/render hai bản giống nhau, không gọi live thêm sau khi đủ ba request.
+Config/DB/checkpoint/EXE cũ nguyên hash. [Hướng dẫn](docs/GROQCLOUD_SETUP.md),
+[báo cáo](docs/GROQCLOUD_REPORT.md), evidence `output/groq-setup-20261111T224304Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
 ## Bắt đầu dịch giữ Sonnet đã chọn — 12/11/2026
 
 Tái hiện config Sonnet nhưng Start còn truyền resume_id của journal Gemini

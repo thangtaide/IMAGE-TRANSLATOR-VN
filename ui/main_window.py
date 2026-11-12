@@ -21,7 +21,7 @@ from ui.models_dialog import ModelManagerDialog
 from ui.preview import PreviewDialog
 from ui.settings_dialog import SettingsDialog
 from ui.workers import ProcessingWorker
-from providers.agy_models import label as ai_model_label
+from providers.agy_models import label as ai_model_label, ai_label
 
 
 def duration(seconds: float | None) -> str:
@@ -140,7 +140,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.mode_label,1,0)
         self.mode = QComboBox()
         for label, value in [('Offline','Offline'), ('Online Free','Online Free'),
-                ('AI qua AGY — Batch', AGY_MODE), ('AI qua AGY — Toàn chương (1 lần)', WHOLE_MODE),
+                ('AI — Batch', AGY_MODE), ('AI — Toàn chương (1 lần)', WHOLE_MODE),
                 (GEMINI_API_MODE,GEMINI_API_MODE), ('Auto Fallback','Auto Fallback')]:
             self.mode.addItem(label, value)
         self.mode.setCurrentIndex(max(0,self.mode.findData('Online Free' if self.options.mode=='Online' else self.options.mode)))
@@ -364,8 +364,10 @@ class MainWindow(QMainWindow):
             self.privacy.setText('Toàn bộ chữ của chương/ảnh đã chọn → một invocation AGY sau xác nhận riêng. '
                 'Không phải batch 24 trang, không chờ 5–10 giây. Kết quả riêng; không tiếp công việc Batch hoặc tự fallback.')
         info = (self.options.gemini_api_model + (' • có key • ' if key_available() else ' • thiếu key • ') + check_configuration(self._mode_options()).code
-                if mode == GEMINI_API_MODE else 'AI: '+ai_model_label(self.options.agy_model,self.options.agy_effort) if mode in (AGY_MODE, WHOLE_MODE) else
+                if mode == GEMINI_API_MODE else 'AI: '+ai_label(self.options) if mode in (AGY_MODE, WHOLE_MODE) else
                 self.online_provider.currentText() if mode in ('Online', 'Online Free') else self.offline_provider.currentText())
+        if mode in (AGY_MODE,WHOLE_MODE) and self.options.ai_provider=='groq':
+            self.privacy.setText('GroqCloud: chỉ gửi văn bản OCR tới API chính thức; không gửi ảnh hoặc tự chuyển provider.')
         self.provider_info.setText(info)
         if mode == AGY_MODE:
             self.provider_info.setText(info)
@@ -408,8 +410,8 @@ class MainWindow(QMainWindow):
         # SettingsDialog saves explicit choices immediately; QA opts stay local.
         if self.persist_settings and (CONFIG / 'settings.json').is_file():
             saved = load_options()
-            if (saved.agy_model,saved.agy_effort) != (self.options.agy_model,self.options.agy_effort):
-                self.options.agy_model,self.options.agy_effort = saved.agy_model,saved.agy_effort
+            if (saved.agy_model,saved.agy_effort,saved.ai_provider,saved.groq_model) != (self.options.agy_model,self.options.agy_effort,self.options.ai_provider,self.options.groq_model):
+                self.options.agy_model,self.options.agy_effort,self.options.ai_provider,self.options.groq_model = saved.agy_model,saved.agy_effort,saved.ai_provider,saved.groq_model
                 self.update_mode()
         self.options.source = self.source.text().strip()
         self.options.output = self.output.text().strip()
@@ -528,7 +530,9 @@ class MainWindow(QMainWindow):
                 except (OSError, ValueError, KeyError) as exc:
                     QMessageBox.warning(self, 'Không đọc được lượt đã lưu', str(exc))
                     return
-                if old.get('mode') == AGY_MODE and old.get('agy_model') != options.agy_model:
+                old_selection=(old.get('ai_provider','agy'),old.get('groq_model') if old.get('ai_provider')=='groq' else old.get('agy_model'))
+                new_selection=(options.ai_provider,options.groq_model if options.ai_provider=='groq' else options.agy_model)
+                if old.get('mode') == AGY_MODE and old_selection != new_selection:
                     self.clear_resume_intent()  # Keep the old isolated run immutable.
             self.resume_id = None
         self.failed = []
@@ -549,7 +553,7 @@ class MainWindow(QMainWindow):
         self.paused_at = None
         self.current.setText('Đang tiếp tục lượt cũ...' if resume else 'Đang quét thư mục và kiểm tra model...')
         if options.mode == AGY_MODE:
-            self.provider_info.setText('AI: '+ai_model_label(options.agy_model, options.agy_effort)
+            self.provider_info.setText('AI: '+ai_label(options)
                                       +(' · tiếp tục lượt cũ' if resume else ''))
         self.worker = ProcessingWorker(options, only, self, cache_path=self.active_cache_path, resume_id=self.resume_id,
             run_id=self.active_run_id,run_base=self.cache_path)
@@ -595,11 +599,13 @@ class MainWindow(QMainWindow):
         if kind == 'agy_batch_wait':
             self.current.setText(f"Đang chờ trước batch tiếp theo • còn {event['remaining_seconds']} giây")
             return
-        if kind in ('agy_batch', 'gemini_api_batch'):
-            self.current.setText(f"{'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+        if kind in ('agy_batch', 'gemini_api_batch','groq_batch'):
+            self.current.setText(f"{'GroqCloud' if kind=='groq_batch' else 'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
             return
         if kind=='agy_run_selection':
-            self.provider_info.setText('AI: '+ai_model_label(event['model'],'' if event.get('effort')=='default' else event.get('effort',''))+' · lượt đang chạy')
+            from providers.groq_api import model_label
+            text='GroqCloud · '+model_label(event['model']) if event.get('ai_provider')=='groq' else ai_model_label(event['model'],'' if event.get('effort')=='default' else event.get('effort',''))
+            self.provider_info.setText('AI: '+text+' · lượt đang chạy')
             return
         if kind == 'gemini_api_usage':
             self.privacy.setText(gemini_usage_text(event))
@@ -780,7 +786,7 @@ class MainWindow(QMainWindow):
             return
         from ui.whole_chapter import WholeChapterDialog
         options = context.get('options') or self.collect_options()
-        dialog = WholeChapterDialog(options, self, bound_context=context, translator_kind='agy')
+        dialog = WholeChapterDialog(options, self, bound_context=context, translator_kind='groq' if options.ai_provider=='groq' else 'agy')
         self.whole_dialog = dialog
         dialog.exec()  # Modal: normal batch controls cannot start alongside this job.
         if dialog.workspace:
@@ -800,7 +806,7 @@ class MainWindow(QMainWindow):
         self.source_tabs.setCurrentIndex(2)
 
     def show_api_settings(self):
-        self.show_settings('gemini_api')
+        self.show_settings(None if self.options.ai_provider=='groq' else 'gemini_api')
 
     def show_settings(self, focus_section=None) -> None:
         self.collect_options()
