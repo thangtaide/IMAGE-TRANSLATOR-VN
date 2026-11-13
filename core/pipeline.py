@@ -118,8 +118,16 @@ class TranslationService:
 
     def _agy(self):
         if self.agy is None:
-            if self.options.ai_provider not in ('agy','groq'):
+            if self.options.ai_provider not in ('agy','groq','qoder'):
                 raise ProviderSuspended('INVALID_REQUEST','Nguồn AI không hợp lệ; chọn lại trong Cài đặt.')
+            if self.options.ai_provider == 'qoder':
+                from providers.qoder import QoderProvider, CONTRACT
+                if self.options.qoder_contract != CONTRACT:
+                    raise ProviderSuspended('INVALID_RESPONSE','Contract Qoder của run chưa được hỗ trợ; không tự migrate.')
+                self.agy = QoderProvider(executable=self.options.qoder_executable,model=self.options.qoder_model,
+                    effort=self.options.qoder_effort,timeout=self.options.agy_timeout,max_requests=self.options.agy_max_requests,
+                    checkpoint=self.control.checkpoint,cancelled=lambda:self.control.cancelled,root=getattr(self,'qoder_receipt_root',None))
+                return self.agy
             if self.options.ai_provider == 'groq':
                 from providers.groq_api import GroqProvider
                 self.agy = GroqProvider(model=self.options.groq_model,timeout=self.options.agy_timeout,
@@ -488,9 +496,13 @@ class ProcessingManager:
             if resuming and self.options.mode==AGY_MODE and getattr(self.service.agy,'model',None) is not None:
                 from providers.agy_models import selection
                 _,effort=selection(self.options.agy_model,self.options.agy_effort) if self.options.ai_provider=='agy' else (None,None)
-                expected_model=self.options.groq_model if self.options.ai_provider=='groq' else self.options.agy_model
+                expected_model=self.options.qoder_model if self.options.ai_provider=='qoder' else self.options.groq_model if self.options.ai_provider=='groq' else self.options.agy_model
+                if self.options.ai_provider=='qoder':effort=self.options.qoder_effort or None
                 if (self.service.agy.model,self.service.agy.effort)!=(expected_model,effort):
                     raise ValueError('RESUME_MODEL_CHANGED: provider chưa khớp model/effort đã lưu; chưa gửi request.')
+            if self.options.ai_provider=='qoder' and self.options.mode==AGY_MODE:
+                self.service.qoder_receipt_root=self.resume_store.root/'qoder-batches'/self.journal['id']
+                if self.service.agy is not None:self.service.agy.root=self.service.qoder_receipt_root
             self.resume_id = self.journal['id']
             self.emit({'type': 'resume_ready', 'resume_id': self.resume_id})
             self.emit({'type': 'files', 'files': [str(p) for p in files]})
@@ -506,6 +518,14 @@ class ProcessingManager:
                     self.service.agy_error_context = dict(job_id=self.journal['id'], chapter_id=self.chapter_id,
                                                          final_job_state='paused_provider')
                 service_identity = self.service.identity()
+                if self.options.mode==AGY_MODE and self.options.ai_provider=='qoder':
+                    observed=self.service.agy.identity
+                    pinned=self.journal.get('qoder_provider_identity')
+                    if pinned is not None and pinned!=observed:
+                        raise ProviderSuspended('MODEL_UNAVAILABLE','Executable/contract Qoder của run đã đổi; không tự gửi lại batch bằng identity khác.')
+                    if pinned is None:
+                        self.journal['qoder_provider_identity']=observed
+                        self.resume_store.save(self.journal)
                 if self.options.mode==AGY_MODE and self.service.agy is not None:
                     self.emit(dict(type='agy_run_selection',model=self.service.agy.model,
                         effort=self.service.agy.effort or 'default',resumed=resuming,ai_provider=self.options.ai_provider))
@@ -516,6 +536,8 @@ class ProcessingManager:
                     preflight_error, preflight_stage = exc, 'TRANSLATION'
                 service_identity = 'unavailable:' + type(exc).__name__
             relevant = self.options.to_dict()
+            if self.options.ai_provider!='qoder' or self.options.mode!=AGY_MODE:
+                for key in ('qoder_executable','qoder_model','qoder_effort','qoder_contract'):relevant.pop(key,None)
             relevant['imaging_revision'] = IMAGING_REVISION
             relevant['text_region_revision'] = 'preserve-symbol-regions-v1'
             relevant.pop('skip_success', None)
@@ -600,7 +622,7 @@ class ProcessingManager:
                     if preflight_error is not None:
                         stage = preflight_stage
                         if self.options.mode == AGY_MODE and isinstance(preflight_error, ProviderSuspended):
-                            self.service.last_attempt = dict(provider='GroqCloud' if self.options.ai_provider=='groq' else 'AGY Gemini', mode=AGY_MODE,
+                            self.service.last_attempt = dict(provider='Qoder CLI' if self.options.ai_provider=='qoder' else 'GroqCloud' if self.options.ai_provider=='groq' else 'AGY Gemini', mode=AGY_MODE,
                                 model=getattr(getattr(preflight_error,'_agy_capture',None),'model','unknown'), model_identity=None)
                         raise preflight_error
                     stage = 'OCR'
@@ -698,11 +720,12 @@ class ProcessingManager:
                     self.cache.checkpoint(self.job_id, str(path), 'paused_provider',
                                           fingerprint=fingerprint, detail=exc.code)
                     self.emit(dict(type='provider_paused', code=exc.code, file=str(path),
+                        qoder_receipt_root=str(getattr(self.service,'qoder_receipt_root','')) if self.options.ai_provider=='qoder' else None,
                         detail=str(exc), retry_after=exc.retry_after, diagnostic_path=log_path,
                         phase=getattr(exc, 'phase', None), request_sent=getattr(exc, 'request_sent', None),
                         request_scope=getattr(exc, 'request_scope', None),
                         image_index=image_indices[str(path)], provider=self.service.last_attempt.get('provider'),
-                        model=self.options.groq_model if self.options.ai_provider=='groq' else getattr(getattr(exc,'_agy_capture',None),'model','unknown') if self.options.mode == AGY_MODE else None,
+                        model=self.options.qoder_model if self.options.ai_provider=='qoder' else self.options.groq_model if self.options.ai_provider=='groq' else getattr(getattr(exc,'_agy_capture',None),'model','unknown') if self.options.mode == AGY_MODE else None,
                         effort=getattr(getattr(exc,'_agy_capture',None),'context',{}).get('agy_effort') if self.options.mode==AGY_MODE else None,
                         agy_timeout=self.options.agy_timeout if self.options.mode == AGY_MODE else None,
                         agy_process_started=getattr(getattr(exc,'_agy_capture',None),'started',None) if self.options.mode == AGY_MODE else None,

@@ -31,6 +31,18 @@ class GroqConnectionWorker(QThread):
             if provider:provider.close()
 
 
+class QoderConnectionWorker(QThread):
+    result = Signal(dict)
+
+    def __init__(self, executable, parent=None):
+        super().__init__(parent);self.executable=executable
+
+    def run(self):
+        from providers.qoder import preflight
+        try:self.result.emit(preflight(self.executable))
+        except Exception as exc:self.result.emit(dict(ok=False,code=getattr(exc,'code','PROVIDER_ERROR'),request_sent=False))
+
+
 class SettingsDialog(QDialog):
     def __init__(self, options: Options, parent=None, focus_section=None):
         super().__init__(parent)
@@ -112,7 +124,7 @@ class SettingsDialog(QDialog):
         form.addRow('AGY executable (.exe)', self.agy_executable)
         self.ai_group=QGroupBox('AI dịch thuật')
         ai_form=QFormLayout(self.ai_group);ai_form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self.ai_source=QComboBox();self.ai_source.addItem('AGY CLI','agy');self.ai_source.addItem('GroqCloud','groq')
+        self.ai_source=QComboBox();self.ai_source.addItem('AGY CLI','agy');self.ai_source.addItem('GroqCloud','groq');self.ai_source.addItem('Qoder CLI','qoder')
         if self.ai_source.findData(options.ai_provider)<0:self.ai_source.addItem('Nguồn đã lưu cần kiểm tra','unsupported')
         self.ai_source.setCurrentIndex(self.ai_source.findData(options.ai_provider) if self.ai_source.findData(options.ai_provider)>=0 else self.ai_source.findData('unsupported'))
         ai_form.addRow('Nguồn dịch',self.ai_source)
@@ -132,6 +144,25 @@ class SettingsDialog(QDialog):
         self.groq_check=QPushButton('Kiểm tra kết nối');self.groq_check.setToolTip('Gửi một đoạn chữ thử ngắn tới GroqCloud, có thể tiêu thụ hạn mức.')
         groq_form.addRow('Model Groq',self.groq_model);groq_form.addRow(self.groq_status);groq_form.addRow(self.groq_check)
         ai_form.addRow(self.groq_controls);self.connection_worker=None;self.groq_retry_until=0
+        from providers.qoder import MODELS as QODER_MODELS
+        self.qoder_controls=QWidget();qoder_form=QFormLayout(self.qoder_controls);qoder_form.setContentsMargins(0,0,0,0)
+        self.qoder_executable=QLineEdit(options.qoder_executable)
+        self.qoder_executable.setPlaceholderText('Trống: tìm Qoder CLI .exe đã cài; không thay PATH')
+        self.qoder_model=QComboBox();self.qoder_model.addItem('Chọn model đã được CLI xác nhận','')
+        for name,value in QODER_MODELS:self.qoder_model.addItem(name,value)
+        index=self.qoder_model.findData(options.qoder_model)
+        if index<0:self.qoder_model.addItem('Model đã lưu cần kiểm tra',options.qoder_model);index=self.qoder_model.count()-1
+        self.qoder_model.setCurrentIndex(index)
+        self.qoder_effort=QComboBox();self.qoder_effort.addItem('CLI chưa xác nhận effort tùy chỉnh','');self.qoder_effort.setEnabled(False)
+        if options.qoder_effort:
+            self.qoder_effort.addItem('Đã lưu: '+options.qoder_effort+' (chưa được xác nhận)',options.qoder_effort)
+            self.qoder_effort.setCurrentIndex(1);self.qoder_effort.setEnabled(True)
+        self.qoder_status=QLabel('Chưa kiểm tra CLI/đăng nhập. Kiểm tra kết nối chỉ chạy metadata, không sinh nội dung.');self.qoder_status.setWordWrap(True)
+        self.qoder_check=QPushButton('Kiểm tra kết nối')
+        self.qoder_check.clicked.connect(self.check_qoder_connection)
+        qoder_form.addRow('Executable Qoder (.exe)',self.qoder_executable);qoder_form.addRow('Model',self.qoder_model)
+        qoder_form.addRow('Mức suy luận',self.qoder_effort);qoder_form.addRow(self.qoder_status);qoder_form.addRow(self.qoder_check)
+        ai_form.addRow(self.qoder_controls)
         self.ai_source.currentIndexChanged.connect(self.update_ai_provider)
         self.groq_check.clicked.connect(self.check_groq_connection);self.update_ai_provider()
         form.insertRow(0,self.ai_group);form.insertRow(1,self.api_group)
@@ -207,8 +238,27 @@ class SettingsDialog(QDialog):
     def update_ai_provider(self):
         from providers.groq_api import key_available
         groq=self.ai_source.currentData()=='groq'
-        self.agy_controls.setVisible(not groq);self.groq_controls.setVisible(groq)
+        self.agy_controls.setVisible(self.ai_source.currentData()=='agy');self.groq_controls.setVisible(groq)
+        self.qoder_controls.setVisible(self.ai_source.currentData()=='qoder')
         self.groq_status.setText('GROQ_API_KEY: '+('đã có (chưa kiểm tra API).' if key_available() else 'chưa có trong môi trường.'))
+
+    def check_qoder_connection(self):
+        if self.connection_worker and self.connection_worker.isRunning():return
+        self.connection_worker=QoderConnectionWorker(self.qoder_executable.text().strip(),self)
+        self.buttons.setEnabled(False);self.qoder_check.setEnabled(False)
+        self.qoder_status.setText('Đang kiểm tra CLI/đăng nhập/catalog; không gửi OCR…')
+        self.connection_worker.result.connect(self.qoder_connection_result)
+        self.connection_worker.finished.connect(lambda:(self.buttons.setEnabled(True),self.qoder_check.setEnabled(True)))
+        self.connection_worker.start()
+
+    def qoder_connection_result(self,result):
+        if not result.get('ok'):
+            self.qoder_status.setText('Qoder: '+result.get('code','PROVIDER_ERROR')+'; chưa gửi request dịch.');return
+        chosen=self.qoder_model.currentData();self.qoder_model.clear()
+        self.qoder_model.addItem('Chọn model','')
+        for model in result['models']:self.qoder_model.addItem(model,model)
+        self.qoder_model.setCurrentIndex(max(0,self.qoder_model.findData(chosen)))
+        self.qoder_status.setText('CLI '+result['version']+' · đã đăng nhập · '+str(len(result['models']))+' model khả dụng. Headless dịch chưa được kiểm tra bởi nút này.')
 
     def check_groq_connection(self):
         if self.connection_worker and self.connection_worker.isRunning():return
@@ -270,8 +320,12 @@ class SettingsDialog(QDialog):
                     glossary[key.strip()] = value.strip()
             if self.fields['font_min'].value() > self.fields['font_max'].value():
                 raise ValueError('Cỡ chữ tối thiểu phải ≤ cỡ tối đa')
-            if self.ai_source.currentData() not in ('agy','groq'):raise ValueError('Chọn nguồn AI hợp lệ trước khi Lưu.')
-            if self.ai_source.currentData()=='groq':
+            if self.ai_source.currentData() not in ('agy','groq','qoder'):raise ValueError('Chọn nguồn AI hợp lệ trước khi Lưu.')
+            if self.ai_source.currentData()=='qoder':
+                from providers.qoder import selection as qoder_selection
+                qoder_selection(self.qoder_model.currentData(),self.qoder_effort.currentData())
+                model,effort=self.options.agy_model,self.options.agy_effort
+            elif self.ai_source.currentData()=='groq':
                 from providers.groq_api import MODEL_IDS
                 if self.groq_model.currentData() not in MODEL_IDS:raise ValueError('Chọn một model Groq hợp lệ.')
                 model,effort=self.options.agy_model,self.options.agy_effort
@@ -291,6 +345,9 @@ class SettingsDialog(QDialog):
         self.options.agy_effort = effort
         self.options.ai_provider=self.ai_source.currentData()
         self.options.groq_model=self.groq_model.currentData()
+        if self.ai_source.currentData()=='qoder':
+            self.options.qoder_model=self.qoder_model.currentData();self.options.qoder_effort=self.qoder_effort.currentData()
+            self.options.qoder_executable=self.qoder_executable.text().strip()
         self.options.gemini_api_free_tier_confirmed = self.gemini_api_free.isChecked()
         self.options.allow_online_fallback = self.allow_fallback.isChecked()
         for name, combo in self.combos.items():

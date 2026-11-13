@@ -15,7 +15,7 @@ PROVIDER_FIELDS = {'mode', 'online_provider', 'offline_provider', 'allow_online_
     'endpoint', 'skip_success', 'diagnostic_text', 'agy_executable', 'agy_model', 'agy_effort',
     'agy_timeout', 'agy_max_requests', 'agy_batch_chars', 'agy_batch_regions', 'agy_context',
     'gemini_api_model', 'gemini_api_timeout', 'gemini_api_max_requests', 'gemini_api_free_tier_confirmed',
-    'ai_provider', 'groq_model'}
+    'ai_provider', 'groq_model', 'qoder_executable', 'qoder_model', 'qoder_effort', 'qoder_contract'}
 
 
 def work_recipe(options: Options) -> str:

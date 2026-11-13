@@ -66,6 +66,21 @@ class ProviderNotice(QWidget):
         super().hide()
 
     def show_error(self, event):
+        if event.get('provider')=='Qoder CLI':
+            known={'CLI_NOT_FOUND','AUTH_REQUIRED','MODEL_UNAVAILABLE','QUOTA_OR_CREDITS_EXCEEDED',
+                'TIMEOUT','CANCELLED','INVALID_RESPONSE','PROVIDER_ERROR','BLOCKED_BY_ISOLATION','QODER_RESULT_UNKNOWN'}
+            code=event.get('code') if event.get('code') in known else 'PROVIDER_ERROR'
+            self.last_code=code;self.active=True
+            message={'CLI_NOT_FOUND':'Chưa tìm thấy Qoder CLI .exe; kiểm tra Cài đặt AI.',
+                'AUTH_REQUIRED':'Qoder CLI chưa đăng nhập; mở CLI và /login bằng trình duyệt.',
+                'QUOTA_OR_CREDITS_EXCEEDED':'Qoder hết Credits hoặc giới hạn quota; giữ checkpoint, không tự retry.',
+                'BLOCKED_BY_ISOLATION':'Không xác minh được cô lập Qoder; chưa cho phép gửi OCR.',
+                'QODER_RESULT_UNKNOWN':'Batch chưa rõ kết quả, có thể đã tính Credits. Tiếp tục cần xác nhận gửi lại.',
+                'TIMEOUT':'Qoder hết thời gian chờ; kết quả chưa rõ, không tự gửi lại.'}.get(code,
+                'Qoder dừng; giữ kết quả đã hoàn thành và checkpoint, không đổi provider.')
+            self.title.setText('Qoder CLI · '+code);self.summary.setText(message);self.message.setText(message)
+            self.settings.setText('Mở Cài đặt AI');self.settings.setVisible(code in ('CLI_NOT_FOUND','AUTH_REQUIRED','MODEL_UNAVAILABLE'))
+            self.log.appendPlainText('Qoder CLI · '+code+' · Không tự retry/fallback.');self.show();return
         if event.get('provider')=='GroqCloud' or event.get('groq_request'):
             from providers.groq_api import MODEL_IDS
             known={'API_KEY_MISSING','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE','INVALID_REQUEST',

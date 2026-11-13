@@ -70,3 +70,11 @@ Không thay OCR, mask, inpainting, renderer, validation nội dung dịch hoặc
 Chrome Bridge. Không thay token/tài khoản/AGY profile toàn cục.
 
 **NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT**
+
+## Qoder CLI — bổ sung 13/11/2026
+
+Nguồn AI thứ ba nằm trong Cài đặt → AI dịch thuật: Qoder CLI. Catalog CLI
+1.1.89 hiện xác nhận Ultimate/Sonus; chưa có capability effort để cấu hình.
+Nút kiểm tra chỉ preflight, không sinh nội dung. Batch nhiều ảnh và Whole tự
+chia batch giữ snapshot/receipt/resume. Xem [setup](QODER_CLI_SETUP.md) và
+[kết quả kiểm chứng, EXE, giới hạn](QODER_CLI_REPORT.md).

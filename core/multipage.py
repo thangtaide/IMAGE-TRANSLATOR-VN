@@ -64,15 +64,17 @@ class MultiPageAGY:
         self.files = files
         self.relevant, self.ocr_identity, self.service_identity = relevant, ocr_identity, service_identity
         self.expected, self.values, self.errors = {}, {}, {}
+        self.is_qoder = manager.options.mode != GEMINI_API_MODE and manager.options.ai_provider=='qoder'
         self.is_groq = manager.options.mode != GEMINI_API_MODE and manager.options.ai_provider=='groq'
-        self.is_api = manager.options.mode == GEMINI_API_MODE or self.is_groq
+        self.is_api = manager.options.mode == GEMINI_API_MODE or self.is_groq or self.is_qoder
         self.max_pages = 16 if self.is_api else AGY_MAX_PAGES
+        if self.is_qoder:self.max_pages=10
         self.batch_chars = manager.options.agy_batch_chars if self.is_api else min(manager.options.agy_batch_chars, AGY_MAX_CHARACTERS)
         if self.is_groq:self.batch_chars=min(self.batch_chars,1000)
         self.batches = iter(pack_pages(self.pages(), self.batch_chars,
             min(manager.options.agy_batch_regions,16) if self.is_groq else manager.options.agy_batch_regions if self.is_api else min(manager.options.agy_batch_regions, AGY_MAX_REGIONS), max_pages=self.max_pages,
             hard_chars=None if self.is_api else AGY_MAX_CHARACTERS))
-        self.provider = self.service._gemini_api() if self.is_api and not self.is_groq else self.service._agy()
+        self.provider = self.service._gemini_api() if self.is_api and not (self.is_groq or self.is_qoder) else self.service._agy()
         if self.is_api:
             self.provider.emit = manager.emit
         self.identity = digest([self.provider.identity, BATCH_VERSION, manager.options.glossary,
@@ -166,6 +168,8 @@ class MultiPageAGY:
                     context_meta.update(job_id=m.job_id, chapter_id=m.chapter_id,
                         batch_id=batch_meta['batch_id'], final_job_state='paused_provider')
             def attach(exc, observed=None):
+                if self.is_qoder:
+                    return
                 if self.is_groq:
                     exc.groq_diagnostic=dict(getattr(exc,'groq_diagnostic',None) or self.provider.last_diagnostic)
                     return
@@ -181,8 +185,8 @@ class MultiPageAGY:
                             transport(getattr(exc, 'code', 'CANCELLED' if isinstance(exc, CancelledError) else 'OTHER_ERROR')))
                 info.update(batch_meta, pending_preserved=True, retry=False, translation_cached=False)
                 exc.agy_diagnostic = sanitize(info)
-            m.emit({'type': 'groq_batch' if self.is_groq else 'gemini_api_batch' if self.is_api else 'agy_batch',
-                    'stage': 'GroqCloud batch nhiều trang' if self.is_groq else 'Gemini API batch nhiều trang' if self.is_api else 'AGY batch nhiều trang',
+            m.emit({'type': 'qoder_batch' if self.is_qoder else 'groq_batch' if self.is_groq else 'gemini_api_batch' if self.is_api else 'agy_batch',
+                    'stage': 'Qoder batch nhiều trang' if self.is_qoder else 'GroqCloud batch nhiều trang' if self.is_groq else 'Gemini API batch nhiều trang' if self.is_api else 'AGY batch nhiều trang',
                     'pages': len({i.page for i in missing}), 'regions': len(missing),
                     'characters': sum(map(len, protected)), 'context_characters': len(str(self.context))})
             try:

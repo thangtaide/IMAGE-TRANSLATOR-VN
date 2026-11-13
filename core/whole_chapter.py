@@ -208,6 +208,39 @@ class GroqWholeChapterTranslator(AGYWholeChapterTranslator):
         finally:self.http.close()
 
 
+class QoderWholeChapterTranslator(AGYWholeChapterTranslator):
+    """Existing manifest lifecycle, with durable Qoder batches instead of one chapter request."""
+    def __init__(self, options, timeout=600, *, runner=None, probe=None):
+        from providers.qoder import QoderProvider, CONTRACT
+        kwargs = {} if runner is None else dict(runner=runner)
+        if options.qoder_contract != CONTRACT:
+            raise ChapterError('QODER_CONTRACT_CHANGED')
+        self.qoder = QoderProvider(options.qoder_executable, options.qoder_model, options.qoder_effort,
+            timeout=timeout, max_requests=options.agy_max_requests, probe=probe, **kwargs)
+        self.model, self.effort, self.timeout = self.qoder.model, self.qoder.effort, timeout
+        self.identity = 'whole-' + self.qoder.identity
+        self.provider = _GuardIdentity(self.identity)
+        self.provider.online = True; self.provider.engine_name = 'Qoder CLI'
+        self.descriptor = dict(kind='qoder', executable=str(self.qoder.path), model=self.model,
+            effort=self.effort or '', timeout=timeout, contract=CONTRACT)
+        self.last_capture = None; self.error_context = {}
+
+    def translate_pending(self, request, workspace, control, namespace, accept, regions, emit):
+        from providers.qoder import pack_rows, image_id
+        self.qoder.root = workspace / 'qoder-batches' / namespace
+        self.qoder.checkpoint = control.checkpoint
+        self.qoder.cancelled = lambda: control.cancelled
+        rows = [dict(image_id=image_id(r['id']), region_id=r['id'], text=r['text']) for r in request]
+        for batch in pack_rows(rows, self.qoder.identity):
+            control.checkpoint()
+            emit(dict(type='qoder_batch', stage='Qoder: batch toàn chương',
+                pages=len({r['image_id'] for r in batch}), regions=len(batch), characters=sum(len(r['text']) for r in batch)))
+            targets = self.qoder.translate_batch([r['text'] for r in batch], 'zh',
+                item_ids=[r['region_id'] for r in batch], image_ids=[r['image_id'] for r in batch])
+            for row, target in zip(batch, targets):
+                accept(regions[row['region_id']], target)
+
+
 class PreparedChapter:
     def __init__(self, owner, manifest, accepted):
         self.owner, self.manifest, self.accepted = owner, manifest, accepted
@@ -267,13 +300,19 @@ class WholeChapterJob:
         if self.path.exists() and isinstance(self.translator,AGYWholeChapterTranslator):
             saved=verify(read_json(self.path))
             descriptor=saved.get('translator',{})
-            if descriptor.get('kind')=='groq':
+            if descriptor.get('kind')=='qoder':
+                self.options=replace(self.options,ai_provider='qoder',qoder_executable=descriptor['executable'],
+                    qoder_model=descriptor['model'],qoder_effort=descriptor.get('effort',''),qoder_contract=descriptor['contract'])
+                if (not isinstance(self.translator,QoderWholeChapterTranslator) or
+                        (self.translator.model,self.translator.effort)!=(descriptor['model'],descriptor.get('effort') or None)):
+                    self.translator=QoderWholeChapterTranslator(self.options,descriptor['timeout'])
+            elif descriptor.get('kind')=='groq':
                 self.options=replace(self.options,ai_provider='groq',groq_model=descriptor['model'])
                 if not isinstance(self.translator,GroqWholeChapterTranslator) or self.translator.model!=descriptor['model']:
                     self.translator=GroqWholeChapterTranslator(self.options,descriptor['timeout'])
             elif descriptor.get('kind')=='agy':
                 pinned=(descriptor['model'],descriptor.get('effort',''))
-                if (self.options.agy_model,self.options.agy_effort)!=pinned or isinstance(self.translator,GroqWholeChapterTranslator):
+                if (self.options.agy_model,self.options.agy_effort)!=pinned or isinstance(self.translator,(GroqWholeChapterTranslator,QoderWholeChapterTranslator)):
                     self.options=replace(self.options,ai_provider='agy',agy_model=pinned[0],agy_effort=pinned[1],
                         agy_executable=descriptor['executable'])
                     self.translator=AGYWholeChapterTranslator(self.options,descriptor['timeout'])
@@ -401,7 +440,7 @@ class WholeChapterJob:
                 if region['id'] in values:
                     self.validated_regions += 1
             pending = [r for r in flat if r['id'] not in values]
-            is_agy = isinstance(adapter, AGYWholeChapterTranslator)
+            is_agy = isinstance(adapter, AGYWholeChapterTranslator) and not isinstance(adapter, QoderWholeChapterTranslator)
             agy_response_path = self.workspace/'agy-response.json'
             saved_response = None
             if is_agy and agy_response_path.exists():
@@ -440,7 +479,13 @@ class WholeChapterJob:
                     deferred = []
                     guard._translate_using(adapter.provider, r['ocr']['text'], r['ocr']['language'], namespace, deferred=deferred)
                     request.append(dict(id=r['id'], text=deferred[0][0], language=r['ocr']['language']))
-                if is_agy:
+                if isinstance(adapter,QoderWholeChapterTranslator):
+                    if self.confirmed_manifest_hash != manifest['content_hash']:
+                        raise ChapterError('WHOLE_AGY_CONFIRMATION_REQUIRED')
+                    self.check_manifest(manifest,sources=True)
+                    adapter.translate_pending(request,self.workspace,control,namespace,accept,
+                        {r['id']:r for r in flat},self.emit)
+                elif is_agy:
                     if saved_response is None:
                         if self.confirmed_manifest_hash != manifest['content_hash']:
                             raise ChapterError('WHOLE_AGY_CONFIRMATION_REQUIRED')

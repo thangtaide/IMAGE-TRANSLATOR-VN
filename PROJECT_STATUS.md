@@ -1,5 +1,27 @@
 # Trạng thái Image Translator VN
 
+## Qoder CLI provider, Batch/Whole/resume và EXE — 13/11/2026
+
+Đã thêm Qoder CLI vào Cài đặt → AI dịch thuật. CLI thật 1.1.89 đã đăng nhập;
+catalog hiện trả Ultimate/Sonus, chưa có effort capability nên không ép flag.
+Batch gom nhiều ảnh/một invocation, trần 10 ảnh và ngân sách text/output;
+Whole tự chia batch, giữ manifest/receipt/progress. Unknown attempt cần xác
+nhận gửi lại một lần; quota dừng, không fallback. Không đổi OCR/imaging/AGY/Groq.
+
+36 test Qoder PASS; bộ cuối 206 PASS/1 deselected (không full suite). Một test
+UI baseline kỳ vọng start không có resume=True, trong khi HEAD đã có; ghi riêng,
+không sửa để ép PASS. Qoder thật 2/3 invocation: headless JSON PASS; ba ảnh OCR
+Trung chung một invocation → render 3/3 PASS, resume skip 3 không gọi thêm.
+Whole/EXE Batch và Whole dùng fixture; GUI source/EXE Save/Cancel/reopen/dark
+popup PASS ở 100% DPI. 315 file dữ liệu/config riêng/EXE baseline nguyên hash;
+config mẫu là thay đổi source có chủ đích. Không xóa cache/DB/output/EXE cũ.
+
+Build.bat và EXE smoke PASS, module Qoder có trong gói; không bundle CLI/auth.
+EXE cuối: `dist/ImageTranslatorVN-20261113T162335164318Z/ImageTranslatorVN-20261113T162335164318Z.exe`.
+[Setup](docs/QODER_CLI_SETUP.md), [báo cáo và giới hạn](docs/QODER_CLI_REPORT.md),
+evidence `output/qoder-integration-20261113T160329Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
 ## GroqCloud chính thức, test cơ bản và EXE — 12/11/2026
 
 Đã thêm nguồn GroqCloud và ba model cố định trong Settings hiện có. Dùng

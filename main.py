@@ -9,6 +9,10 @@ from core.storage import configure_logging
 def main() -> int:
     initialize()
     configure_logging()
+    if '--qoder-check' in sys.argv:
+        sys.argv.remove('--qoder-check')
+        from scripts.validate_qoder import main as qoder_check
+        return qoder_check()
     if '--groq-check' in sys.argv:
         sys.argv.remove('--groq-check')
         from scripts.validate_groq import main as groq_check

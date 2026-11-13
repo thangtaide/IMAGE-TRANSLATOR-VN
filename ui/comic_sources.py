@@ -732,6 +732,8 @@ class ComicSourcesPanel(QWidget):
 
     def handle_event(self, event):
         kind = event.get('type')
+        if kind=='provider_paused' and event.get('provider')=='Qoder CLI':
+            self.qoder_receipt_root=event.get('qoder_receipt_root')
         if kind == 'whole_input_progress':
             self.status.setText(f"Chuẩn bị lượt mới • {event['stage']} • {event.get('index',0)}/{event.get('total',0)}")
             return
@@ -940,6 +942,9 @@ class ComicSourcesPanel(QWidget):
         if not record:
             self.status.setText('Không có journal nguồn để khôi phục.')
             return
+        if record.get('options',{}).get('ai_provider')=='qoder' and getattr(self,'qoder_receipt_root',None):
+            from ui.qoder_retry import confirm_unknown_receipts
+            if not confirm_unknown_receipts(self.qoder_receipt_root,self):return
         if not self.check_provider_setup():
             return
         self.options = self.options_factory() if self.options_factory else self.options

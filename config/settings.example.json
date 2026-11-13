@@ -29,5 +29,9 @@
   "tile_size": 1600,
   "endpoint": "http://127.0.0.1:5000",
   "glossary": {},
-  "reading_direction": "ltr"
+  "reading_direction": "ltr",
+  "qoder_executable": "",
+  "qoder_model": "",
+  "qoder_effort": "",
+  "qoder_contract": "qoder-images-json-v1"
 }

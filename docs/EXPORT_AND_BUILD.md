@@ -1,5 +1,13 @@
 # Thư mục xuất ngoài project và build EXE — 10/11/2026
 
+## Qoder CLI — EXE bổ sung 13/11/2026
+
+EXE cuối: `dist/ImageTranslatorVN-20261113T162335164318Z/ImageTranslatorVN-20261113T162335164318Z.exe`.
+Build bằng build.bat hiện có; module Qoder đóng gói, CLI/auth để ngoài gói.
+Source live ba ảnh/một invocation PASS; EXE Settings/Batch/Whole/resume smoke
+dùng fixture PASS. Xem [báo cáo](QODER_CLI_REPORT.md) và [cài CLI](QODER_CLI_SETUP.md).
+Các release bên dưới là lịch sử. Không xóa/ghi đè EXE cũ.
+
 ## Release GUI/cache mới nhất
 
 Mở `dist/ImageTranslatorVN-20261110T152147487436Z/ImageTranslatorVN-20261110T152147487436Z.exe`.

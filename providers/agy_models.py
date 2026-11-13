@@ -55,6 +55,8 @@ def bind_run_model(options, saved):
     """Pin only AGY selection; explicit switches to Offline/API keep prior behavior."""
     if options.mode == saved.get('mode') == 'AI Gemini AGY':
         options.ai_provider=saved.get('ai_provider','agy')
+        for field in ('qoder_executable','qoder_model','qoder_effort','qoder_contract'):
+            if field in saved:setattr(options,field,saved[field])
         options.groq_model=saved.get('groq_model','qwen/qwen3.8-27b')
         options.agy_model=saved.get('agy_model',options.agy_model)
         options.agy_effort=saved.get('agy_effort','')
@@ -62,6 +64,8 @@ def bind_run_model(options, saved):
 
 
 def ai_label(options):
+    if options.ai_provider == 'qoder':
+        return 'Qoder · '+(options.qoder_model or 'chưa chọn model')
     if options.ai_provider == 'groq':
         from providers.groq_api import model_label
         return 'GroqCloud · '+model_label(options.groq_model)

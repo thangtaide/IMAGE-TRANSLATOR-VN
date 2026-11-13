@@ -16,6 +16,14 @@ class Preflight:
 
 
 def check_configuration(options):
+    if options.mode in ('AI Gemini AGY','AI Gemini AGY Whole Chapter') and options.ai_provider=='qoder':
+        from providers.qoder import find_qoder,selection,CONTRACT
+        try:
+            find_qoder(options.qoder_executable);selection(options.qoder_model,options.qoder_effort)
+            if options.qoder_contract!=CONTRACT:return Preflight('INVALID_RESPONSE',False,'Qoder CLI')
+        except Exception as exc:
+            return Preflight(getattr(exc,'code','MODEL_UNAVAILABLE'),False,'Qoder CLI')
+        return Preflight('READY_UNVERIFIED',True,'Qoder CLI')
     if options.mode in ('AI Gemini AGY','AI Gemini AGY Whole Chapter') and options.ai_provider == 'groq':
         from providers.groq_api import key_available as groq_key_available
         ready=groq_key_available()

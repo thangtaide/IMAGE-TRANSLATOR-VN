@@ -368,11 +368,13 @@ class MainWindow(QMainWindow):
                 self.online_provider.currentText() if mode in ('Online', 'Online Free') else self.offline_provider.currentText())
         if mode in (AGY_MODE,WHOLE_MODE) and self.options.ai_provider=='groq':
             self.privacy.setText('GroqCloud: chỉ gửi văn bản OCR tới API chính thức; không gửi ảnh hoặc tự chuyển provider.')
+        if mode in (AGY_MODE,WHOLE_MODE) and self.options.ai_provider=='qoder':
+            self.privacy.setText('Qoder: chỉ gửi OCR; tối đa 10 ảnh/batch, tự chia theo ngân sách; giữ receipt/resume, không tự retry.')
         self.provider_info.setText(info)
         if mode == AGY_MODE:
             self.provider_info.setText(info)
         if mode == WHOLE_MODE:
-            self.provider_info.setText(info + ' • toàn chương • 1 invocation sau xác nhận')
+            self.provider_info.setText(info + (' • toàn chương • tự chia batch' if self.options.ai_provider=='qoder' else ' • toàn chương • 1 invocation sau xác nhận'))
         if hasattr(self, 'start_button'):
             self.start_button.setText('Chuẩn bị toàn chương' if mode == WHOLE_MODE else 'Bắt đầu dịch')
         for panel in (getattr(self,'image_panel',None),getattr(self,'url_panel',None)):
@@ -410,6 +412,9 @@ class MainWindow(QMainWindow):
         # SettingsDialog saves explicit choices immediately; QA opts stay local.
         if self.persist_settings and (CONFIG / 'settings.json').is_file():
             saved = load_options()
+            if any(getattr(saved,k)!=getattr(self.options,k) for k in ('qoder_executable','qoder_model','qoder_effort','qoder_contract')):
+                for key in ('qoder_executable','qoder_model','qoder_effort','qoder_contract'):setattr(self.options,key,getattr(saved,key))
+                self.update_mode()
             if (saved.agy_model,saved.agy_effort,saved.ai_provider,saved.groq_model) != (self.options.agy_model,self.options.agy_effort,self.options.ai_provider,self.options.groq_model):
                 self.options.agy_model,self.options.agy_effort,self.options.ai_provider,self.options.groq_model = saved.agy_model,saved.agy_effort,saved.ai_provider,saved.groq_model
                 self.update_mode()
@@ -506,6 +511,9 @@ class MainWindow(QMainWindow):
             try:
                 saved = ResumeStore(self.active_cache_path).read(self.resume_id)
                 bind_run_model(options, saved['options'])
+                if options.ai_provider=='qoder':
+                    from ui.qoder_retry import confirm_unknown_receipts
+                    if not confirm_unknown_receipts(ResumeStore(self.active_cache_path).root/'qoder-batches'/self.resume_id,self):return
             except (OSError, ValueError, KeyError) as exc:
                 QMessageBox.warning(self, 'Không tiếp tục được lượt cũ', str(exc))
                 return
@@ -530,8 +538,8 @@ class MainWindow(QMainWindow):
                 except (OSError, ValueError, KeyError) as exc:
                     QMessageBox.warning(self, 'Không đọc được lượt đã lưu', str(exc))
                     return
-                old_selection=(old.get('ai_provider','agy'),old.get('groq_model') if old.get('ai_provider')=='groq' else old.get('agy_model'))
-                new_selection=(options.ai_provider,options.groq_model if options.ai_provider=='groq' else options.agy_model)
+                old_selection=(old.get('ai_provider','agy'),old.get('qoder_model') if old.get('ai_provider')=='qoder' else old.get('groq_model') if old.get('ai_provider')=='groq' else old.get('agy_model'))
+                new_selection=(options.ai_provider,options.qoder_model if options.ai_provider=='qoder' else options.groq_model if options.ai_provider=='groq' else options.agy_model)
                 if old.get('mode') == AGY_MODE and old_selection != new_selection:
                     self.clear_resume_intent()  # Keep the old isolated run immutable.
             self.resume_id = None
@@ -599,12 +607,12 @@ class MainWindow(QMainWindow):
         if kind == 'agy_batch_wait':
             self.current.setText(f"Đang chờ trước batch tiếp theo • còn {event['remaining_seconds']} giây")
             return
-        if kind in ('agy_batch', 'gemini_api_batch','groq_batch'):
-            self.current.setText(f"{'GroqCloud' if kind=='groq_batch' else 'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
+        if kind in ('agy_batch', 'gemini_api_batch','groq_batch','qoder_batch'):
+            self.current.setText(f"{'Qoder' if kind=='qoder_batch' else 'GroqCloud' if kind=='groq_batch' else 'Gemini API' if kind == 'gemini_api_batch' else 'AGY'}: {event['pages']} trang • {event['regions']} vùng • {event['characters']} ký tự")
             return
         if kind=='agy_run_selection':
             from providers.groq_api import model_label
-            text='GroqCloud · '+model_label(event['model']) if event.get('ai_provider')=='groq' else ai_model_label(event['model'],'' if event.get('effort')=='default' else event.get('effort',''))
+            text='Qoder · '+event['model'] if event.get('ai_provider')=='qoder' else 'GroqCloud · '+model_label(event['model']) if event.get('ai_provider')=='groq' else ai_model_label(event['model'],'' if event.get('effort')=='default' else event.get('effort',''))
             self.provider_info.setText('AI: '+text+' · lượt đang chạy')
             return
         if kind == 'gemini_api_usage':
@@ -786,7 +794,7 @@ class MainWindow(QMainWindow):
             return
         from ui.whole_chapter import WholeChapterDialog
         options = context.get('options') or self.collect_options()
-        dialog = WholeChapterDialog(options, self, bound_context=context, translator_kind='groq' if options.ai_provider=='groq' else 'agy')
+        dialog = WholeChapterDialog(options, self, bound_context=context, translator_kind=options.ai_provider)
         self.whole_dialog = dialog
         dialog.exec()  # Modal: normal batch controls cannot start alongside this job.
         if dialog.workspace:
@@ -806,7 +814,7 @@ class MainWindow(QMainWindow):
         self.source_tabs.setCurrentIndex(2)
 
     def show_api_settings(self):
-        self.show_settings(None if self.options.ai_provider=='groq' else 'gemini_api')
+        self.show_settings(None if self.options.ai_provider in ('groq','qoder') else 'gemini_api')
 
     def show_settings(self, focus_section=None) -> None:
         self.collect_options()

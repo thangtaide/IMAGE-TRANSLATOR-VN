@@ -54,6 +54,10 @@ class Options:
     agy_effort: str = ''  # Legacy empty: infer Gemini from exact ID; other models use model default.
     ai_provider: str = 'agy'
     groq_model: str = 'qwen/qwen3.8-27b'
+    qoder_executable: str = ''
+    qoder_model: str = ''
+    qoder_effort: str = ''
+    qoder_contract: str = 'qoder-images-json-v1'
     agy_timeout: int = 300
     agy_max_requests: int = 64
     agy_batch_chars: int = 3000
