@@ -350,6 +350,8 @@ class WholeChapterDialog(QDialog):
                 'WHOLE_RECIPE_OR_SOURCE_CHANGED':'Nguồn/cấu hình/identity khác journal; không sửa hash hoặc chuyển provider để ép resume.',
                 'WHOLE_AGY_RESPONSE_CHANGED':'Receipt phản hồi AGY không khớp; không dùng hoặc tự gửi lại.',
                 'NUMERIC_MISMATCH':'Bản dịch bị numeric guard từ chối; không sửa số hoặc gửi lại AGY.'}
+            if self.translator.currentData()=='qoder':
+                reasons['REQUEST_BUDGET']='Đạt giới hạn số lệnh Qoder cục bộ; batch tiếp theo chưa gửi. Chủ động Tiếp tục, giữ các batch đã hoàn thành.'
             if self.translator.currentData()=='groq':
                 for remote in ('API_KEY_MISSING','AUTH_REQUIRED','ACCESS_DENIED','MODEL_UNAVAILABLE','RATE_LIMITED','PROVIDER_UNAVAILABLE','TIMEOUT','NETWORK_ERROR','INVALID_REQUEST','INVALID_RESPONSE'):
                     reasons[remote]='GroqCloud: '+remote+'. Giữ checkpoint; kiểm tra key/model/API rồi chủ động Tiếp tục. Không tự retry hoặc đổi nguồn.'

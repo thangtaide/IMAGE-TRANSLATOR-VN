@@ -1,5 +1,19 @@
 # Thư mục xuất ngoài project và build EXE — 10/11/2026
 
+## Qoder 20 trang, chữ trắng và giới hạn lệnh — 14/11/2026
+
+EXE: `dist/ImageTranslatorVN-20261113T175152999651Z/ImageTranslatorVN-20261113T175152999651Z.exe`.
+Build.bat và EXE Settings/Batch/Whole/resume fixture PASS. Trần 20 ảnh theo
+ngân sách, mặc định chữ trắng viền đen; giới hạn Qoder riêng 128 lệnh/lần chạy.
+Continue giữ snapshot cũ; lượt mới dùng style mới. [Báo cáo](QODER_BATCH_STYLE_FIX.md).
+
+## EXE sửa Sonus MODEL_UNAVAILABLE — 13/11/2026
+
+`dist/ImageTranslatorVN-20261113T165328912911Z/ImageTranslatorVN-20261113T165328912911Z.exe`.
+Build.bat và smoke EXE Sonus Batch/Whole/resume fixture, GUI Settings PASS.
+Nhận đúng metadata smodel của Sonus; giữ contract/checkpoint. Đóng bản cũ,
+mở bản mới và chủ động Tiếp tục. [Báo cáo sửa lỗi](QODER_SONUS_FIX.md).
+
 ## Qoder CLI — EXE bổ sung 13/11/2026
 
 EXE cuối: `dist/ImageTranslatorVN-20261113T162335164318Z/ImageTranslatorVN-20261113T162335164318Z.exe`.

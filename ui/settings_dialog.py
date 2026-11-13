@@ -162,6 +162,9 @@ class SettingsDialog(QDialog):
         self.qoder_check.clicked.connect(self.check_qoder_connection)
         qoder_form.addRow('Executable Qoder (.exe)',self.qoder_executable);qoder_form.addRow('Model',self.qoder_model)
         qoder_form.addRow('Mức suy luận',self.qoder_effort);qoder_form.addRow(self.qoder_status);qoder_form.addRow(self.qoder_check)
+        self.qoder_budget=QSpinBox();self.qoder_budget.setRange(1,128);self.qoder_budget.setValue(options.qoder_max_requests)
+        self.qoder_budget.setToolTip('Giới hạn số invocation trong một lần chạy Qoder. Chạm trần sẽ dừng an toàn; Tiếp tục giữ kết quả đã xong.')
+        qoder_form.addRow('Lệnh Qoder tối đa/lần chạy',self.qoder_budget)
         ai_form.addRow(self.qoder_controls)
         self.ai_source.currentIndexChanged.connect(self.update_ai_provider)
         self.groq_check.clicked.connect(self.check_groq_connection);self.update_ai_provider()
@@ -348,6 +351,7 @@ class SettingsDialog(QDialog):
         if self.ai_source.currentData()=='qoder':
             self.options.qoder_model=self.qoder_model.currentData();self.options.qoder_effort=self.qoder_effort.currentData()
             self.options.qoder_executable=self.qoder_executable.text().strip()
+            self.options.qoder_max_requests=self.qoder_budget.value()
         self.options.gemini_api_free_tier_confirmed = self.gemini_api_free.isChecked()
         self.options.allow_online_fallback = self.allow_fallback.isChecked()
         for name, combo in self.combos.items():

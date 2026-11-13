@@ -1,0 +1,52 @@
+{
+  "provenance": {
+    "cli_version": "1.1.89",
+    "requested_model": "Sonus",
+    "source": "real neutral three-image invocation; metadata values and session IDs removed"
+  },
+  "packet": {
+    "batch_id": "0772bd18e5e7582946a10f02cd42045b1a4ce22a151fbf72f25c3636d861b568",
+    "images": [
+      {
+        "image_id": "p1",
+        "regions": [
+          {
+            "region_id": "p1_r0",
+            "text": "你好"
+          }
+        ]
+      },
+      {
+        "image_id": "p2",
+        "regions": [
+          {
+            "region_id": "p2_r0",
+            "text": "谢谢"
+          }
+        ]
+      },
+      {
+        "image_id": "p3",
+        "regions": [
+          {
+            "region_id": "p3_r0",
+            "text": "再见"
+          }
+        ]
+      }
+    ]
+  },
+  "envelope": {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "num_turns": 1,
+    "stop_reason": "end_turn",
+    "permission_denials": [],
+    "result": "{\"batch_id\":\"0772bd18e5e7582946a10f02cd42045b1a4ce22a151fbf72f25c3636d861b568\",\"images\":[{\"image_id\":\"p1\",\"regions\":[{\"region_id\":\"p1_r0\",\"text\":\"Xin chào\"}]},{\"image_id\":\"p2\",\"regions\":[{\"region_id\":\"p2_r0\",\"text\":\"Cảm ơn\"}]},{\"image_id\":\"p3\",\"regions\":[{\"region_id\":\"p3_r0\",\"text\":\"Tạm biệt\"}]}]}",
+    "modelUsage": {
+      "auto": {},
+      "smodel": {}
+    }
+  }
+}

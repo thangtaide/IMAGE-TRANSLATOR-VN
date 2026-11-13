@@ -369,7 +369,7 @@ class MainWindow(QMainWindow):
         if mode in (AGY_MODE,WHOLE_MODE) and self.options.ai_provider=='groq':
             self.privacy.setText('GroqCloud: chỉ gửi văn bản OCR tới API chính thức; không gửi ảnh hoặc tự chuyển provider.')
         if mode in (AGY_MODE,WHOLE_MODE) and self.options.ai_provider=='qoder':
-            self.privacy.setText('Qoder: chỉ gửi OCR; tối đa 10 ảnh/batch, tự chia theo ngân sách; giữ receipt/resume, không tự retry.')
+            self.privacy.setText('Qoder: chỉ gửi OCR; tối đa 20 ảnh/batch, tự chia theo ngân sách; giữ receipt/resume, không tự retry.')
         self.provider_info.setText(info)
         if mode == AGY_MODE:
             self.provider_info.setText(info)
@@ -412,8 +412,8 @@ class MainWindow(QMainWindow):
         # SettingsDialog saves explicit choices immediately; QA opts stay local.
         if self.persist_settings and (CONFIG / 'settings.json').is_file():
             saved = load_options()
-            if any(getattr(saved,k)!=getattr(self.options,k) for k in ('qoder_executable','qoder_model','qoder_effort','qoder_contract')):
-                for key in ('qoder_executable','qoder_model','qoder_effort','qoder_contract'):setattr(self.options,key,getattr(saved,key))
+            if any(getattr(saved,k)!=getattr(self.options,k) for k in ('qoder_executable','qoder_model','qoder_effort','qoder_contract','qoder_max_requests')):
+                for key in ('qoder_executable','qoder_model','qoder_effort','qoder_contract','qoder_max_requests'):setattr(self.options,key,getattr(saved,key))
                 self.update_mode()
             if (saved.agy_model,saved.agy_effort,saved.ai_provider,saved.groq_model) != (self.options.agy_model,self.options.agy_effort,self.options.ai_provider,self.options.groq_model):
                 self.options.agy_model,self.options.agy_effort,self.options.ai_provider,self.options.groq_model = saved.agy_model,saved.agy_effort,saved.ai_provider,saved.groq_model

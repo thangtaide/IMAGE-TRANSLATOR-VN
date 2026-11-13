@@ -37,7 +37,7 @@ class Options:
     font_min: int = 8
     font_max: int = 40
     alignment: str = "center"
-    foreground: str = "black"
+    foreground: str = "white"
     stroke: int = 1
     line_spacing: int = 3
     erase_mode: str = "inpaint"
@@ -58,6 +58,7 @@ class Options:
     qoder_model: str = ''
     qoder_effort: str = ''
     qoder_contract: str = 'qoder-images-json-v1'
+    qoder_max_requests: int = 128
     agy_timeout: int = 300
     agy_max_requests: int = 64
     agy_batch_chars: int = 3000

@@ -74,7 +74,7 @@ def images(folder):
     return source
 
 
-def pipeline(run,folder,live):
+def pipeline(run,folder,live,model='Ultimate'):
     from core.pipeline import ProcessingManager
     from core.storage import TranslationCache
     from core.whole_chapter import WholeChapterJob, QoderWholeChapterTranslator
@@ -82,7 +82,7 @@ def pipeline(run,folder,live):
     from providers.qoder_process import run_process
     source=images(folder);hashes={p.name:file_digest(p) for p in source.glob('*.png')}
     opts=Options(source=str(source),output=str(folder/'rendered'),mode='AI Gemini AGY',ai_provider='qoder',
-        qoder_model='Ultimate',agy_max_requests=3,agy_context=False)
+        qoder_model=model,agy_max_requests=3,agy_context=False)
     traces=[]
     def runner(argv,payload,cwd,timeout,cancelled=lambda:False):
         packet=json.loads(payload)
@@ -99,11 +99,11 @@ def pipeline(run,folder,live):
         for page in result['images']:
             for row in page['regions']:row['text']='Xin chào.'
         return 0,json.dumps(dict(type='result',subtype='success',is_error=False,num_turns=1,
-            stop_reason='end_turn',permission_denials=[],modelUsage={'ultimate':{}},result=json.dumps(result))).encode(),b''
+            stop_reason='end_turn',permission_denials=[],modelUsage={'smodel' if model=='Sonus' else 'ultimate':{}},result=json.dumps(result))).encode(),b''
     cache=TranslationCache(folder/'state.sqlite3');events=[]
     try:
         with patch('providers.qoder.QoderProvider',side_effect=lambda *a,**kw:QoderProvider(*a,**kw,runner=runner,
-                probe=None if live else dict(models=['Ultimate'],plugins={}))):
+                probe=None if live else dict(models=[model],plugins={}))):
             first=ProcessingManager(opts,cache=cache,ocr=None if live else FixtureOCR(),emit=events.append,
                 diagnostic_root=folder/'diagnostics').run()
             atomic_json(folder/'batch-result.json',first)
@@ -116,12 +116,12 @@ def pipeline(run,folder,live):
         metadata=[json.loads(r[0]) for r in cache.connection.execute("SELECT value FROM cache WHERE kind='metadata'")]
         assert len(metadata)==3 and all(m['translations'] for m in metadata)
         assert hashes=={p.name:file_digest(p) for p in source.glob('*.png')}
-        report=dict(status='PASS',live=live,batch=first,resume=second,invocations=traces,
+        report=dict(status='PASS',live=live,model=model,batch=first,resume=second,invocations=traces,
             source_unchanged=True,real_ocr=live,outputs=[str(p.relative_to(ROOT)) for p in (folder/'rendered').glob('*.png')])
         if not live:
             from uuid import uuid4
             work=ROOT/'output'/('stage3g-qoder-smoke-'+folder.name+'-'+uuid4().hex[:8])
-            adapter=QoderWholeChapterTranslator(opts,runner=runner,probe=dict(models=['Ultimate'],plugins={}))
+            adapter=QoderWholeChapterTranslator(opts,runner=runner,probe=dict(models=[model],plugins={}))
             job=WholeChapterJob(source,work,options=opts,translator=adapter,ocr=FixtureOCR())
             prep=job.run();assert prep['state']=='awaiting_translation',prep
             result=job.run(allow_translation=True,confirmed_manifest_hash=prep['manifest_hash'])
@@ -136,6 +136,7 @@ def pipeline(run,folder,live):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--run',type=Path,required=True)
     parser.add_argument('--phase',required=True);parser.add_argument('--action',choices=('gui','fixture','live'),default='gui')
+    parser.add_argument('--model',choices=('Ultimate','Sonus'),default='Ultimate')
     args=parser.parse_args();run=(ROOT/args.run).resolve()
     if not run.is_relative_to(ROOT/'output') or not args.phase.replace('-','').isalnum():parser.error('Isolated QA run required')
     folder=run/args.phase;folder.mkdir(exist_ok=False)
@@ -143,7 +144,7 @@ def main():
     try:
         from core.runtime import prepare_inference_runtime
         prepare_inference_runtime()
-        report.update(gui(folder) if args.action=='gui' else pipeline(run,folder,args.action=='live'))
+        report.update(gui(folder) if args.action=='gui' else pipeline(run,folder,args.action=='live',args.model))
     except Exception as exc:
         report.update(error_code=getattr(exc,'code',type(exc).__name__))
         if isinstance(exc,AssertionError):report['assertion']=str(exc)[:2000]

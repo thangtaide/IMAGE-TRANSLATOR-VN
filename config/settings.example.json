@@ -19,7 +19,7 @@
   "font_min": 8,
   "font_max": 40,
   "alignment": "center",
-  "foreground": "black",
+  "foreground": "white",
   "stroke": 1,
   "line_spacing": 3,
   "erase_mode": "inpaint",
@@ -33,5 +33,6 @@
   "qoder_executable": "",
   "qoder_model": "",
   "qoder_effort": "",
-  "qoder_contract": "qoder-images-json-v1"
+  "qoder_contract": "qoder-images-json-v1",
+  "qoder_max_requests": 128
 }

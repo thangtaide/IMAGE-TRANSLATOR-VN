@@ -216,7 +216,7 @@ class QoderWholeChapterTranslator(AGYWholeChapterTranslator):
         if options.qoder_contract != CONTRACT:
             raise ChapterError('QODER_CONTRACT_CHANGED')
         self.qoder = QoderProvider(options.qoder_executable, options.qoder_model, options.qoder_effort,
-            timeout=timeout, max_requests=options.agy_max_requests, probe=probe, **kwargs)
+            timeout=timeout, max_requests=options.qoder_max_requests, probe=probe, **kwargs)
         self.model, self.effort, self.timeout = self.qoder.model, self.qoder.effort, timeout
         self.identity = 'whole-' + self.qoder.identity
         self.provider = _GuardIdentity(self.identity)
@@ -302,7 +302,9 @@ class WholeChapterJob:
             descriptor=saved.get('translator',{})
             if descriptor.get('kind')=='qoder':
                 self.options=replace(self.options,ai_provider='qoder',qoder_executable=descriptor['executable'],
-                    qoder_model=descriptor['model'],qoder_effort=descriptor.get('effort',''),qoder_contract=descriptor['contract'])
+                    qoder_model=descriptor['model'],qoder_effort=descriptor.get('effort',''),qoder_contract=descriptor['contract'],
+                    foreground=saved['options'].get('foreground',self.options.foreground),
+                    stroke=saved['options'].get('stroke',self.options.stroke))
                 if (not isinstance(self.translator,QoderWholeChapterTranslator) or
                         (self.translator.model,self.translator.effort)!=(descriptor['model'],descriptor.get('effort') or None)):
                     self.translator=QoderWholeChapterTranslator(self.options,descriptor['timeout'])

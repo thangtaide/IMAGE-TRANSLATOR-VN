@@ -1,5 +1,47 @@
 # Trạng thái Image Translator VN
 
+## Qoder 20 trang/batch, chữ trắng và REQUEST_BUDGET — 14/11/2026
+
+Trần Qoder Batch/Whole tăng 10→20 ảnh, vẫn bị giới hạn bởi prompt/vùng/output.
+Preference và default mới: chữ trắng, viền đen 1 px; renderer không đổi.
+Diagnostic trang 0239 là chạm 64 lệnh cục bộ dùng chung AGY, không phải lỗi
+Qoder server. Tách qoder_max_requests mặc định 128/lần chạy, chỉnh riêng trong
+Settings; chạm trần báo REQUEST_BUDGET, chưa gửi batch, chờ Continue chủ động.
+Giữ giới hạn AGY/Groq, không tự retry/fallback.
+
+Continue Qoder giữ màu/viền snapshot cũ và bỏ qua ảnh đã xong; lượt mới dùng
+kiểu trắng/đen. Field hạn mức không đổi recipe/fingerprint; journal cũ tương
+thích. Không sửa run production (186 done/4 fallback/35 pending khi kiểm tra).
+
+141 test liên quan PASS, Qoder cuối 45 PASS; source/EXE Batch/Whole/resume
+fixture và GUI dark PASS. Không gọi Qoder thật. 382/384 file baseline nguyên
+hash; hai thay đổi mong đợi là config hiện tại/config mẫu. Index 8 file staged
+có sẵn giữ nguyên. Không sửa pipeline ảnh hoặc EXE cũ.
+
+EXE: `dist/ImageTranslatorVN-20261113T175152999651Z/ImageTranslatorVN-20261113T175152999651Z.exe`.
+[Báo cáo](docs/QODER_BATCH_STYLE_FIX.md), evidence `output/qoder-batch-style-20261113T174540Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Sửa Sonus báo MODEL_UNAVAILABLE — 13/11/2026
+
+Nguyên nhân adapter so tên Sonus với modelUsage.sonus, trong khi CLI 1.1.89
+thật dùng khóa smodel. Thêm ánh xạ đã xác minh; giữ kiểm tra model/JSON/ID,
+không đổi model, contract/cache identity hoặc tự retry. Run 225 ảnh của người
+dùng vẫn pending nguyên trạng; không gửi lại chương trong QA.
+
+Một invocation Sonus thật mới tái hiện lỗi cũ; CLI trả success, ba ảnh/ba vùng.
+Adapter sửa nhận lại nguyên response thật, lưu/reuse receipt PASS, không thêm
+generation. 74 test liên quan PASS. Source/EXE Sonus Batch/Whole/resume fixture
+và EXE Settings GUI PASS; không phải full suite/live Whole. 319 file baseline
+giữ nguyên hash, gồm config/DB/checkpoint/EXE cũ. Không sửa pipeline ảnh/AGY/Groq.
+
+EXE sửa: `dist/ImageTranslatorVN-20261113T165328912911Z/ImageTranslatorVN-20261113T165328912911Z.exe`.
+Đóng bản cũ, mở bản này và chủ động Tiếp tục; không xóa cache. Batch bị bản cũ
+loại chưa có response trong receipt nên phần pending cần gửi lại, có thể tốn
+Credits. [Chi tiết](docs/QODER_SONUS_FIX.md), evidence
+`output/qoder-model-fix-20261113T164915Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
 ## Qoder CLI provider, Batch/Whole/resume và EXE — 13/11/2026
 
 Đã thêm Qoder CLI vào Cài đặt → AI dịch thuật. CLI thật 1.1.89 đã đăng nhập;

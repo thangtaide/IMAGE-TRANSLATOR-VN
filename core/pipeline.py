@@ -125,7 +125,7 @@ class TranslationService:
                 if self.options.qoder_contract != CONTRACT:
                     raise ProviderSuspended('INVALID_RESPONSE','Contract Qoder của run chưa được hỗ trợ; không tự migrate.')
                 self.agy = QoderProvider(executable=self.options.qoder_executable,model=self.options.qoder_model,
-                    effort=self.options.qoder_effort,timeout=self.options.agy_timeout,max_requests=self.options.agy_max_requests,
+                    effort=self.options.qoder_effort,timeout=self.options.agy_timeout,max_requests=self.options.qoder_max_requests,
                     checkpoint=self.control.checkpoint,cancelled=lambda:self.control.cancelled,root=getattr(self,'qoder_receipt_root',None))
                 return self.agy
             if self.options.ai_provider == 'groq':
@@ -488,6 +488,14 @@ class ProcessingManager:
             if not files:
                 raise ValueError('Thư mục không có ảnh được hỗ trợ hoặc không còn ảnh cần thử lại')
             resuming=bool(self.resume_id)
+            if resuming and self.options.mode==AGY_MODE:
+                saved_options=self.resume_store.read(self.resume_id)['options']
+                if saved_options.get('ai_provider')=='qoder':
+                    # New style preferences must not change an existing run's render recipe.
+                    for field in ('foreground','stroke'):
+                        if field in saved_options:
+                            setattr(self.options,field,saved_options[field])
+                            setattr(self.service.options,field,saved_options[field])
             self.journal = self.resume_store.pipeline(self.options, files, self.cache, self.resume_id, self.chapter_id)
             from providers.agy_models import bind_run_model
             bind_run_model(self.options,self.journal['options'])
@@ -536,6 +544,7 @@ class ProcessingManager:
                     preflight_error, preflight_stage = exc, 'TRANSLATION'
                 service_identity = 'unavailable:' + type(exc).__name__
             relevant = self.options.to_dict()
+            relevant.pop('qoder_max_requests',None)  # Operational limit, never a translation/render identity.
             if self.options.ai_provider!='qoder' or self.options.mode!=AGY_MODE:
                 for key in ('qoder_executable','qoder_model','qoder_effort','qoder_contract'):relevant.pop(key,None)
             relevant['imaging_revision'] = IMAGING_REVISION

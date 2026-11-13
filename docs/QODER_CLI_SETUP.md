@@ -28,7 +28,10 @@ settings/snapshot của Image Translator VN.
 
 CLI 1.1.89 đã xác nhận hai giá trị tên dùng cho `--model`: `Ultimate`, `Sonus`.
 Fixture gốc đã làm sạch: `tests/fixtures/qoder_models_1_1_89.txt`.
-`Ultimate` đã chạy headless và batch thật; `Sonus` mới xác nhận bằng catalog.
+`Ultimate` đã chạy headless và batch thật. `Sonus` đã chạy một batch thử thật;
+CLI trả modelUsage bằng tên nội bộ `smodel`, khác tên `Sonus` truyền qua
+`--model`. Bản sửa nhận đúng ánh xạ này, vẫn từ chối metadata model khác.
+Xem [sửa lỗi Sonus MODEL_UNAVAILABLE](QODER_SONUS_FIX.md).
 Không có Qwen3.7-Plus/MiniMax-M3/DeepSeek-V4-Flash/Qwen3.8-Max/Efficient trong
 output tài khoản được kiểm tra, nên không đưa các ID suy đoán vào catalog.
 
@@ -45,12 +48,24 @@ Model được kiểm tra lại với catalog trước khi gửi batch đầu c�
 ## Batch, Whole Chapter và resume
 
 Một batch gom nhiều ảnh vào một invocation, một JSON dịch. Trần cục bộ:
-10 ảnh, 60 vùng, 3.000 ký tự OCR, prompt UTF-8 24.000 byte (gồm system prompt),
+20 ảnh, 60 vùng, 3.000 ký tự OCR, prompt UTF-8 24.000 byte (gồm system prompt),
 output cap 4.096 token. Có ước lượng bảo thủ cho độ dài tiếng Việt, escape và
 ID lặp lại: `3 × ký tự nguồn + tổng độ dài ID + overhead` tối đa 3.072 đơn vị.
 Đây là ngân sách ứng dụng; CLI chưa cung cấp giới hạn context/output của model
 trong catalog/metadata (các giá trị quan sát là 0), không coi 0 là vô hạn.
 Output vượt/cắt bị từ chối, không retry để "sửa JSON".
+
+20 là số ảnh tối đa, không phải số ảnh bắt buộc trong mỗi invocation. Prompt,
+số vùng, ID và output dự kiến có thể làm batch nhỏ hơn. Qoder có hạn mức riêng
+`qoder_max_requests`, mặc định 128 invocation/lần chạy, chỉnh trong nhóm Qoder
+ở Cài đặt AI. Hạn mức AGY/Groq giữ nguyên. Chạm trần cục bộ báo REQUEST_BUDGET,
+không phải PROVIDER_ERROR/quota; batch tiếp theo chưa gửi. Người dùng chủ động
+Continue từ checkpoint, không tự retry hoặc đổi nguồn.
+
+Lượt mới mặc định chữ trắng, viền đen 1 px bằng renderer hiện có. Continue
+Qoder giữ foreground/stroke của snapshot cũ; thay preference không làm đổi
+ảnh đã xuất hoặc recipe của lượt đang dở. Muốn áp dụng kiểu chữ mới cho cả
+chương, tạo lượt mới với output riêng. Xem [báo cáo cập nhật](QODER_BATCH_STYLE_FIX.md).
 
 Whole Chapter Qoder tự chia nhiều batch nếu cần, lưu tiến độ/receipt sau mỗi
 batch, rồi dùng renderer hiện có. Không chuyển thủ công sang Batch. Một ảnh
@@ -95,12 +110,19 @@ cây này, không kill tiến trình Qoder Desktop/CLI khác theo tên. stdout/s
 | QUOTA_OR_CREDITS_EXCEEDED | Chờ quota/kiểm tra Credits, giữ checkpoint |
 | TIMEOUT / CANCELLED | Kết quả có thể chưa rõ; không tự gửi lại |
 | INVALID_RESPONSE | Giữ receipt/input; không nhận JSON/ID sai hoặc bị cắt |
+| REQUEST_BUDGET | Chạm giới hạn lệnh cục bộ; chủ động Continue hoặc chỉnh hạn mức Qoder |
 | PROVIDER_ERROR | Xem diagnostic, kiểm tra cấu hình/kết nối rồi quyết định |
 | BLOCKED_BY_ISOLATION | Kiểm tra hooks/plugins; ứng dụng không tự cấp quyền |
 | QODER_RESULT_UNKNOWN | Xác nhận rõ trước khi gửi lại và tiêu Credits lần nữa |
 
 Không tự mua Credits, bật billing, đổi provider hoặc retry toàn chương.
 Credits không được suy ra từ số invocation. Timeout/hủy có thể vẫn bị tính phí.
+
+Nếu bản EXE đầu báo MODEL_UNAVAILABLE khi chọn Sonus dù đăng nhập/catalog hợp
+lệ, dùng EXE sửa lỗi trong `QODER_SONUS_FIX.md`. Đóng bản cũ, mở bản mới và
+chủ động Continue run đã lưu. Không xóa cache/journal hoặc đổi sang Ultimate
+để né lỗi. Batch bị bản cũ loại sau khi CLI trả thành công không có response
+để replay; Continue phải gửi lại phần pending, có thể tiêu Credits thêm.
 
 Tài liệu Qoder có [headless automation](https://docs.qoder.com/cli/run-in-scripts).
 [Terms of Service](https://qoder.com/product-service) mục 3.2.10 có giới hạn rộng

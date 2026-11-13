@@ -68,7 +68,9 @@ class MultiPageAGY:
         self.is_groq = manager.options.mode != GEMINI_API_MODE and manager.options.ai_provider=='groq'
         self.is_api = manager.options.mode == GEMINI_API_MODE or self.is_groq or self.is_qoder
         self.max_pages = 16 if self.is_api else AGY_MAX_PAGES
-        if self.is_qoder:self.max_pages=10
+        if self.is_qoder:
+            from providers.qoder import MAX_IMAGES
+            self.max_pages=MAX_IMAGES
         self.batch_chars = manager.options.agy_batch_chars if self.is_api else min(manager.options.agy_batch_chars, AGY_MAX_CHARACTERS)
         if self.is_groq:self.batch_chars=min(self.batch_chars,1000)
         self.batches = iter(pack_pages(self.pages(), self.batch_chars,
