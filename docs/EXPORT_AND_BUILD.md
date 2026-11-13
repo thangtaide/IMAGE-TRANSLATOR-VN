@@ -1,5 +1,20 @@
 # Thư mục xuất ngoài project và build EXE — 10/11/2026
 
+## Renderer cho phép lấn nền 0252/0257 — 14/11/2026
+
+EXE mới: `dist/ImageTranslatorVN-20261113T185906439443Z/ImageTranslatorVN-20261113T185906439443Z.exe`.
+194 test liên quan và build.bat PASS. Source replay hai trang thật PASS; EXE
+smoke trên fixture cùng OCR boxes/bản dịch PASS. Không gọi AI. Ảnh source không
+còn ở vị trí ban đầu sau source replay, nên không gọi EXE fixture là test ảnh
+gốc. [Báo cáo và ảnh review](LAYOUT_BACKGROUND_OVERLAP.md). Giữ EXE cũ.
+
+## Renderer LAYOUT_UNFIT 0257 — 14/11/2026
+
+EXE: `dist/ImageTranslatorVN-20261113T183157119104Z/ImageTranslatorVN-20261113T183157119104Z.exe`.
+Build.bat và replay dữ liệu thật của 0257 bằng EXE PASS; reuse OCR/bản dịch
+cache, không gọi AI. Nới khung có kiểm tra nền/biên/va chạm, giữ fallback an
+toàn. [Báo cáo và ảnh review](LAYOUT_UNFIT_0257_FIX.md). Không ghi đè EXE cũ.
+
 ## Qoder 20 trang, chữ trắng và giới hạn lệnh — 14/11/2026
 
 EXE: `dist/ImageTranslatorVN-20261113T175152999651Z/ImageTranslatorVN-20261113T175152999651Z.exe`.

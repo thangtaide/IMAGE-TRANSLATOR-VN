@@ -670,7 +670,7 @@ class ProcessingManager:
                     stage = 'RENDER'
                     self.event(path, 'Chèn chữ', 80, index+1, len(files))
                     renderer = TextRenderer(self.options)
-                    rendered = renderer.render(erased, regions, translations)
+                    rendered = renderer.render(erased, regions, translations, protected_regions=preserved_regions)
                     self.control.checkpoint()
                     stage = 'EXPORT'
                     self.event(path, 'Đang lưu', 95, index+1, len(files))

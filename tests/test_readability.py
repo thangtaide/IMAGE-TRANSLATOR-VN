@@ -88,10 +88,21 @@ class ReadableLayoutTests(unittest.TestCase):
         before=original.tobytes()
         with patch.object(ImageDraw.ImageDraw,'multiline_text') as draw:
             with self.assertRaises(TextLayoutError):
-                renderer.render(original,[region((0,0,150,40)),region((180,80,183,83))],['Đọc được','Không được cắt mất câu này'])
+                renderer.render(original,[region((0,0,150,40)),region((180,80,183,83))],
+                    ['Đọc được','Không được cắt mất câu này '*30])
             draw.assert_not_called()
         self.assertEqual(before,original.tobytes())
         self.assertEqual(renderer.last_layout,[])
+
+    def test_tiny_frame_recovers_when_background_overlap_is_available(self):
+        renderer=TextRenderer(Options(font_min=14))
+        image=Image.new('RGB',(200,100),'white')
+        output=renderer.render(image,[region((0,0,150,40)),region((180,80,183,83))],
+            ['Đọc được','Không được cắt mất câu này'])
+        self.assertEqual(output.size,image.size)
+        self.assertEqual(renderer.last_layout[1]['layout_strategy'],'background-overlap-wrap')
+        self.assertEqual(renderer.last_layout[1]['wrapped'].split(),'Không được cắt mất câu này'.split())
+        self.assertFalse(renderer._intersects(renderer.last_layout[0]['paint_box'],renderer.last_layout[1]['paint_box']))
 
     def test_long_word_is_never_truncated(self):
         with self.assertRaises(TextLayoutError):
@@ -160,7 +171,8 @@ class RemovalPipelineTests(WorkspaceCase):
     def test_renderer_uses_inpainted_object_and_correct_order(self):
         self.image(); marker=Image.new('RGBA',(480,160),(10,70,90,190)); order=[]
         def remove(*args): order.append('remove'); return marker
-        def render(renderer,image,*args):
+        def render(renderer,image,*args,**kwargs):
+            self.assertIn('protected_regions',kwargs)
             self.assertIs(image,marker); order.append('render'); return image.copy()
         with patch('core.pipeline.erase_text',side_effect=remove),patch.object(TextRenderer,'render',render):
             result=self.manager().run()

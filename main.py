@@ -9,6 +9,10 @@ from core.storage import configure_logging
 def main() -> int:
     initialize()
     configure_logging()
+    if '--layout-check' in sys.argv:
+        sys.argv.remove('--layout-check')
+        from scripts.validate_layout import main as layout_check
+        return layout_check()
     if '--qoder-check' in sys.argv:
         sys.argv.remove('--qoder-check')
         from scripts.validate_qoder import main as qoder_check

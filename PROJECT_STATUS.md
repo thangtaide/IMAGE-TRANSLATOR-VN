@@ -1,5 +1,49 @@
 # Trạng thái Image Translator VN
 
+## Renderer: cho phép mở rộng chữ lấn nền — 14/11/2026
+
+Phản hồi mới dùng bản dịch nhãn `Tùy Tính ACG`, làm nhóm [0,1] của 0252
+(64×30) và 0257 (64×32) không vừa; khác với case nhóm [2] trước đó.
+Thêm fallback cuối được phép lấn texture/artwork theo yêu cầu người dùng,
+tìm rộng đến mép ảnh nhưng tránh OCR/protected/planned frames và alpha rỗng.
+Giữ đủ từ, font metrics/stroke/padding/clipping; layout cũ hợp lệ không đổi.
+
+Source replay cả hai trang từ receipt/cache mới PASS: nhóm [0,1] lên 160×46
+và 160×44, font 20/hai dòng. Case 0257 receipt cũ giữ nguyên layout. 194 test
+liên quan PASS (không full suite); không OCR/dịch lại, không ghi checkpoint.
+Thư mục source chương 11 không còn ở vị trí cũ sau source replay; không tự
+khôi phục dữ liệu. Giữ ảnh QA và phân biệt EXE fixture với source thật.
+[Báo cáo](docs/LAYOUT_BACKGROUND_OVERLAP.md), evidence
+`output/layout-overlap-20261113T185141Z/`.
+Build.bat PASS; EXE frozen fixture PASS, bytecode renderer khớp source.
+EXE: `dist/ImageTranslatorVN-20261113T185906439443Z/ImageTranslatorVN-20261113T185906439443Z.exe`.
+Các EXE baseline giữ nguyên hash. DB/settings/journal có thay đổi trong lúc
+ứng dụng đang hoạt động; ghi nhận riêng trong data-preservation.json, không
+hoàn nguyên hoặc tự nhận toàn bộ dữ liệu runtime bất biến.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
+## Renderer: khung thấp 179×23 và 0257.jpg — 14/11/2026
+
+Tái hiện đúng nhóm [2] từ cache: Arial font 10 wrap hai dòng cao 27 px, box
+179×23 không đủ; renderer đã có wrap nhưng chưa mở vùng cho đoạn dịch này.
+Thêm fallback layout trên nền phẳng liên thông cục bộ, nới khung có giới hạn,
+giữ mép ảnh/biên/texture/alpha, OCR khác và protected numbers. Khung mới được
+đo/padding và clip, không cắt chữ; hết chỗ vẫn fallback trước khi vẽ.
+
+0257 thật source và EXE PASS với năm bản dịch khớp hash receipt/checkpoint,
+không OCR/dịch lại: nhóm [2] mở lên 8 px thành 179×31, font 11/hai dòng, không
+giao email phía dưới. Pixel các vùng vốn hợp lệ giống renderer HEAD. Giữ
+font/target nguyên trạng; Arial vẫn thiếu glyph của bốn ký tự CJK trong cache.
+Không đổi OCR/provider/mask/inpaint/checkpoint/fallback; pipeline chỉ truyền
+preserved_regions để chặn mở rộng lên chữ cần giữ. Không invalidate ảnh done.
+
+187 test liên quan PASS, gồm 15 case layout mới; không full suite. Build.bat
+và EXE replay 0257 PASS; 402 file dữ liệu/source/fallback/EXE baseline nguyên
+hash. Ảnh sửa để review riêng, không ghi đè output production.
+EXE: `dist/ImageTranslatorVN-20261113T183157119104Z/ImageTranslatorVN-20261113T183157119104Z.exe`.
+[Báo cáo](docs/LAYOUT_UNFIT_0257_FIX.md), evidence `output/layout-wrap-20261113T181450Z/`.
+NO_COMMIT · NO_PUSH · NO_TAG · NO_DESTRUCTIVE_GIT.
+
 ## Qoder 20 trang/batch, chữ trắng và REQUEST_BUDGET — 14/11/2026
 
 Trần Qoder Batch/Whole tăng 10→20 ảnh, vẫn bị giới hạn bởi prompt/vùng/output.

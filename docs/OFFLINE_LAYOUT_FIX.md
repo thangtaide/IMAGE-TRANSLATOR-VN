@@ -1,5 +1,13 @@
 # Sửa layout offline cho OCR boxes giao nhẹ ở góc — 12/11/2026
 
+**Cập nhật tiếp theo:** fallback cuối được phép lấn nền theo yêu cầu người dùng,
+vẫn giữ biên ảnh và tránh chữ khác. Xem [0252/0257](LAYOUT_BACKGROUND_OVERLAP.md).
+
+**Cập nhật 14/11/2026:** thêm fallback cho box thấp khi wrap đã đúng nhưng
+không đủ chiều cao; chỉ nới trong nền cục bộ đã kiểm tra và tránh OCR/protected
+regions. Corner trim và các layout cũ hợp lệ giữ nguyên. Xem
+[sửa 0257.jpg, regression và EXE](LAYOUT_UNFIT_0257_FIX.md).
+
 Đã sửa renderer tổng quát và kiểm thử bằng ảnh/chữ trung tính. Không xử lý lại
 các ảnh Chap 27 đã xác định có nội dung tình dục trực diện. Không đưa ảnh mới
 vào thư mục truyện hoặc tuyên bố ba ảnh đó đã được khôi phục.

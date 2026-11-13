@@ -193,19 +193,136 @@ class TextRenderer:
     def _intersects(a, b):
         return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
-    def _fit_text(self, text, width, height, draw, *, minimum_only=False):
+    def _fit_text(self, text, width, height, draw, *, minimum_only=False, alternate_wrap=False):
         sizes = (self.options.font_min,) if minimum_only else range(
             self.options.font_max, self.options.font_min-1, -1)
         for size in sizes:
             font = ImageFont.truetype(str(self.font_path), size)
-            wrapped = self._wrap(text, font, width, draw)
-            if wrapped is None:
-                continue
             spacing = max(0, min(self.options.line_spacing, size // 4))
-            bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=spacing,
-                                          align=self.options.alignment, stroke_width=self.options.stroke)
-            if bbox[2]-bbox[0] <= width and bbox[3]-bbox[1] <= height:
-                return font, wrapped, spacing, bbox
+            widths = (width, max(1,int(width*.9)), max(1,int(width*.8))) if alternate_wrap else (width,)
+            for wrap_width in dict.fromkeys(widths):
+                wrapped = self._wrap(text, font, wrap_width, draw)
+                if wrapped is None:
+                    continue
+                bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=spacing,
+                                              align=self.options.alignment, stroke_width=self.options.stroke)
+                if bbox[2]-bbox[0] <= width and bbox[3]-bbox[1] <= height:
+                    return font, wrapped, spacing, bbox
+        return None
+
+    def _expand_on_flat_background(self, image, source_box, text, obstacles, draw):
+        """Bounded, pixel-checked fallback; never infer free space from box geometry.
+
+        Only new pixels in the same local, nearly flat connected background as
+        the erased source box are eligible. Strong edges, texture, alpha and
+        other OCR/protected/planned rectangles stop growth. Accepted old layouts
+        never enter this method.
+        """
+        x0,y0,x1,y1 = source_box
+        width,height = x1-x0,y1-y0
+        dx = min(96,max(12,math.ceil(width*.4)))
+        dy = min(64,max(8,height*2))
+        roi = [max(0,x0-dx),max(0,y0-dy),min(image.width,x1+dx),min(image.height,y1+dy)]
+        if (roi[2]-roi[0])*(roi[3]-roi[1]) > 2_000_000:
+            return None
+        patch = np.array(image.crop(tuple(roi)).convert('RGBA'))
+        rgb = patch[:,:,:3]
+        sx0,sy0,sx1,sy1 = x0-roi[0],y0-roi[1],x1-roi[0],y1-roi[1]
+        original = rgb[sy0:sy1,sx0:sx1]
+        reference = np.median(original.reshape(-1,3),axis=0)
+        delta = np.max(np.abs(rgb.astype(np.float32)-reference),axis=2)
+        gray = cv2.cvtColor(rgb,cv2.COLOR_RGB2GRAY).astype(np.float32)
+        gx = cv2.Sobel(gray,cv2.CV_32F,1,0,borderType=cv2.BORDER_REPLICATE)
+        gy = cv2.Sobel(gray,cv2.CV_32F,0,1,borderType=cv2.BORDER_REPLICATE)
+        flat = (delta<=10) & (np.maximum(np.abs(gx),np.abs(gy))<=16) & (patch[:,:,3]==255)
+        _,labels = cv2.connectedComponents(flat.astype(np.uint8),connectivity=4)
+        counts = np.bincount(labels[sy0:sy1,sx0:sx1].ravel())
+        counts[0] = 0
+        component = int(np.argmax(counts))
+        if counts[component] < width*height*.85:
+            return None
+        unsafe = (labels!=component).astype(np.uint8)
+        # Original pixels are already allocated to this OCR group. Only added
+        # pixels must be uniformly safe; do not classify the entire image blank.
+        unsafe[sy0:sy1,sx0:sx1] = 0
+        integral = cv2.integral(unsafe)
+
+        def is_safe(box):
+            if any(self._intersects(box,other) for other in obstacles):
+                return False
+            a,b,c,d = box[0]-roi[0],box[1]-roi[1],box[2]-roi[0],box[3]-roi[1]
+            return integral[d,c]-integral[b,c]-integral[d,a]+integral[b,a] == 0
+
+        return self._fit_expanded_frame(source_box,text,draw,roi,is_safe)
+
+    def _expand_over_background(self, image, source_box, text, obstacles, draw):
+        """Last resort authorized to cover artwork, never other text or alpha.
+
+        Search to image edges instead of the conservative flat-background ROI.
+        Keep the original anchor inside the frame and prefer a readable, local
+        frame over pushing the type to font_max across the whole image.
+        """
+        alpha = image.getchannel('A') if image.mode == 'RGBA' else None
+        if alpha is not None and alpha.getextrema() == (255,255):
+            alpha = None
+
+        def is_safe(box):
+            return (not any(self._intersects(box,other) for other in obstacles) and
+                (alpha is None or alpha.crop(box).getextrema() == (255,255)))
+
+        preferred_size = min(self.options.font_max,max(self.options.font_min,
+            min(20,round((source_box[3]-source_box[1])*.65))))
+        return self._fit_expanded_frame(source_box,text,draw,
+            [0,0,image.width,image.height],is_safe,max_size=preferred_size)
+
+    def _fit_expanded_frame(self, source_box, text, draw, roi, is_safe, *, max_size=None):
+        x0,y0,x1,y1 = source_box
+        width,height = x1-x0,y1-y0
+
+        def dimensions(original,maximum):
+            steps = (0,2,4,8,12,16,24,32,48,64,96,128,192,256,384,512,768,1024,maximum-original)
+            return sorted({min(maximum,original+n) for n in steps if n>=0})
+
+        def positions(lo,hi,extent,roi_lo,roi_hi):
+            return {max(roi_lo,min(roi_hi-extent,int(start)))
+                for start in ((lo+hi-extent)//2,lo,hi-extent)}
+
+        candidates = set()
+        for w in dimensions(width,roi[2]-roi[0]):
+            for h in dimensions(height,roi[3]-roi[1]):
+                if w==width and h==height:
+                    continue
+                for x in positions(x0,x1,w,roi[0],roi[2]):
+                    for y in positions(y0,y1,h,roi[1],roi[3]):
+                        box = (x,y,x+w,y+h)
+                        if x<=x0 and y<=y0 and x+w>=x1 and y+h>=y1 and is_safe(box):
+                            candidates.add(box)
+        # Prefer readable type, then the least growth/drift, then fewer lines.
+        ranked = sorted(candidates,key=lambda b:((b[2]-b[0])*(b[3]-b[1]),
+            abs(b[0]+b[2]-x0-x1)+abs(b[1]+b[3]-y0-y1),b))
+        if not ranked:
+            return None
+        for size in range(max_size or self.options.font_max,self.options.font_min-1,-1):
+            font = ImageFont.truetype(str(self.font_path),size)
+            spacing = max(0,min(self.options.line_spacing,size//4))
+            wrapped_cache = {}
+            fitting = []
+            for box in ranked:
+                w,h = box[2]-box[0]-2,box[3]-box[1]-2  # Raster safety padding.
+                for wrap_width in dict.fromkeys((w,max(1,int(w*.9)),max(1,int(w*.8)))):
+                    if wrap_width not in wrapped_cache:
+                        wrapped = self._wrap(text,font,wrap_width,draw)
+                        bbox = (draw.multiline_textbbox((0,0),wrapped,font=font,spacing=spacing,
+                            align=self.options.alignment,stroke_width=self.options.stroke) if wrapped is not None else None)
+                        wrapped_cache[wrap_width] = (wrapped,bbox)
+                    wrapped,bbox = wrapped_cache[wrap_width]
+                    if bbox is not None and bbox[2]-bbox[0]<=w and bbox[3]-bbox[1]<=h:
+                        score = ((box[2]-box[0])*(box[3]-box[1]),
+                            abs(box[0]+box[2]-x0-x1)+abs(box[1]+box[3]-y0-y1),wrapped.count('\n'),box)
+                        fitting.append((score,box,(font,wrapped,spacing,bbox)))
+            if fitting:
+                _,box,fit = min(fitting,key=lambda entry:entry[0])
+                return list(box),fit
         return None
 
     def _separate_sparse_corners(self, group, regions, translations, image_size, draw):
@@ -265,12 +382,13 @@ class TextRenderer:
             result.append(item)
         return result
 
-    def plan_layout(self, image_size, regions, translations):
+    def plan_layout(self, image_size, regions, translations, *, image=None, protected_regions=()):
         """Resolve intersecting OCR boxes before drawing any text.
 
         Close groups over their union rectangle so a merged group cannot cover
         another region. Flow each distinct translation exactly once within that
-        existing text band, preserving IDs/text upstream and avoiding new art.
+        existing text band first, preserving IDs/text upstream. Failed fits may
+        expand over background, reserving other OCR/protected/planned frames.
         """
         if len(regions) != len(translations):
             raise ValueError('Số vùng OCR không khớp số bản dịch')
@@ -323,12 +441,17 @@ class TextRenderer:
             else:
                 resolved.append(group)
         groups = resolved
+        protected_boxes = [list(r.box) if hasattr(r,'box') else list(r) for r in protected_regions]
+        if image is not None and image.size != tuple(image_size):
+            raise ValueError('Kích thước ảnh kiểm tra layout không khớp')
         plans = []
         for group in groups:
             indices = sorted(group['indices'])
             text = '  '.join(translations[index].strip() for index in indices)
             x0,y0,x1,y1 = group['box']
             width, height = x1-x0, y1-y0
+            local_expansion = False
+            background_expansion = False
             fit = self._fit_text(text, width, height, draw)
             if fit is None:
                 # A small unchanged Latin identifier can be wider than its tight
@@ -350,10 +473,26 @@ class TextRenderer:
                         x0,y0,x1,y1 = candidate; width,height = x1-x0,y1-y0
                         fit = font,text,spacing,bbox
                 if fit is None:
+                    fit = self._fit_text(text,width,height,draw,alternate_wrap=True)
+                if fit is None and image is not None:
+                    members = set(indices)|{i for i,parent in duplicates.items() if parent in indices}
+                    blockers = ([other['box'] for other in groups if other is not group]+protected_boxes+
+                        [p['box'] for p in plans]+[list(r.box) for i,r in enumerate(regions) if i not in members])
+                    blockers = [[b[0]-1,b[1]-1,b[2]+1,b[3]+1] for b in blockers]
+                    expanded = self._expand_on_flat_background(image,group['box'],text,blockers,draw)
+                    if expanded is None:
+                        expanded = self._expand_over_background(image,group['box'],text,blockers,draw)
+                        background_expansion = expanded is not None
+                    if expanded is not None:
+                        (x0,y0,x1,y1),fit = expanded
+                        width,height = x1-x0,y1-y0
+                        local_expansion = True
+                if fit is None:
                     raise TextLayoutError(f'LAYOUT_UNFIT: bản dịch nhóm {indices} không vừa ({width}×{height}px) ở cỡ tối thiểu {self.options.font_min}; không cắt nội dung hoặc vẽ chồng.')
             font, wrapped, spacing, bbox = fit
-            x = x0 - bbox[0] + ((width-(bbox[2]-bbox[0]))/2 if self.options.alignment == 'center' else 0)
-            y = y0 - bbox[1] + (height-(bbox[3]-bbox[1]))/2
+            pad = 1 if local_expansion else 0
+            x = x0 + pad - bbox[0] + ((width-2*pad-(bbox[2]-bbox[0]))/2 if self.options.alignment == 'center' else 0)
+            y = y0 + pad - bbox[1] + (height-2*pad-(bbox[3]-bbox[1]))/2
             if ''.join(wrapped.split()) != ''.join(text.split()):
                 raise TextLayoutError('LAYOUT_UNFIT: word wrap làm thay đổi nội dung')
             plans.append(dict(region_indices=indices, duplicate_indices=[i for i,v in duplicates.items() if v in indices],
@@ -362,22 +501,30 @@ class TextRenderer:
             if 'layout_strategy' in group:
                 plans[-1].update(source_box=group['source_box'], layout_strategy=group['layout_strategy'])
             if [x0,y0,x1,y1] != group['box']:
-                plans[-1].update(source_box=group['box'],layout_strategy='verbatim-ascii-local-padding')
+                plans[-1].update(source_box=group['box'],layout_strategy=
+                    'background-overlap-wrap' if background_expansion else
+                    'local-flat-background-wrap' if local_expansion else 'verbatim-ascii-local-padding')
         for i,plan in enumerate(plans):
             if any(self._intersects(plan['paint_box'],p['paint_box']) for p in plans[i+1:]):
                 raise TextLayoutError('LAYOUT_UNFIT: vùng đặt chữ giao nhau sau bố trí')
         return plans
 
-    def render(self, image: Image.Image, regions: list[OCRResult], translations: list[str]) -> Image.Image:
+    def render(self, image: Image.Image, regions: list[OCRResult], translations: list[str], *, protected_regions=()) -> Image.Image:
         self.last_layout = []
-        plans = self.plan_layout(image.size,regions,translations)
+        plans = self.plan_layout(image.size,regions,translations,image=image,protected_regions=protected_regions)
         output = image.copy()
         draw = ImageDraw.Draw(output)
         for plan in plans:
             font = ImageFont.truetype(str(self.font_path),plan['font_size'])
-            draw.multiline_text(tuple(plan['origin']),plan['wrapped'],font=font,fill=self.options.foreground,
+            clipped = plan.get('layout_strategy') in ('local-flat-background-wrap','background-overlap-wrap')
+            tile = output.crop(tuple(plan['box'])) if clipped else None
+            painter = ImageDraw.Draw(tile) if clipped else draw
+            origin = (plan['origin'][0]-plan['box'][0],plan['origin'][1]-plan['box'][1]) if clipped else tuple(plan['origin'])
+            painter.multiline_text(origin,plan['wrapped'],font=font,fill=self.options.foreground,
                 spacing=plan['spacing'],align=self.options.alignment,stroke_width=self.options.stroke,
                 stroke_fill='white' if self.options.foreground == 'black' else 'black')
+            if clipped:
+                output.paste(tile,tuple(plan['box'][:2]))
         self.last_layout = plans
         if image.mode == 'RGBA':
             output.putalpha(image.getchannel('A'))
